@@ -60,7 +60,7 @@ Please raise an issue if you encounter any problem.
 After build step success, run following commands:
 
 ```bash
-source devel/setup.zsh
+source devel/setup.zsh # Or make this command automatic by the command: echo "source /home/$USER/slict_ws/devel/setup.bash" >> ~/.bashrc"
 roslaunch slict run_ntuviral.launch bag_file:=${PATH_TO_THE_NTU_BAG}
 # Example: roslaunch slict run_ntuviral.launch bag_file:=/home/$USER/DATASETS/ntu_viral/eee_01/eee_01.bag
 ```
@@ -136,4 +136,6 @@ The details of SLICT are presented in the [paper](https://arxiv.org/abs/2211.039
 }
 ```
 
-![image](docs/ba-dum-tsss.gif)
+<p align="center">
+<img src="docs/ba-dum-tsss.gif" alt= “” width="70%" height="70%">
+</p>
