@@ -41,7 +41,7 @@ SLICT uses UFOMap for global map management. It also supports epicyclic lidar (L
 2. [UFOMap (devel_surfel)](https://github.com/brytsknguyen/ufomap/tree/devel_surfel)
 3. [Livox ROS driver (forked)](https://github.com/brytsknguyen/livox_ros_driver)
 
-Please install all dependencies first. Afterwards, create a ros workspace, clone the package to the workspace, and build by `catkin build` or `catkin_make`, for e.g.:
+Please install all dependencies first. Afterwards, create a ros workspace, clone the packages to the workspace, and build by `catkin build` or `catkin_make`, for e.g.:
 
 ```
 mkdir -p slict_ws/src
@@ -60,7 +60,7 @@ Please raise an issue if you encounter any problem.
 After build step success, run following commands:
 
 ```bash
-source devel/setup.zsh # Or make this command automatic by the command: echo "source /home/$USER/slict_ws/devel/setup.bash" >> ~/.bashrc"
+source devel/setup.zsh # Or make this command automatic by: echo "source /home/$USER/slict_ws/devel/setup.bash" >> ~/.bashrc"
 roslaunch slict run_ntuviral.launch bag_file:=${PATH_TO_THE_NTU_BAG}
 # Example: roslaunch slict run_ntuviral.launch bag_file:=/home/$USER/DATASETS/ntu_viral/eee_01/eee_01.bag
 ```
