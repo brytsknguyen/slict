@@ -1,4 +1,5 @@
-# SLICT: Multi-Input Multi-Scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping
+SLICT: Multi-Input Multi-Scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping
+===
 
 # Demo Video
 
@@ -7,29 +8,65 @@
     <img src="docs/thumbnail.png" width=80% />
 </div>
 
-# Prerequisites
 
-The software was developed on the following dependancies
-1. [Ubuntu 20.04](https://releases.ubuntu.com/20.04/)
-2. [ROS Noetic](http://wiki.ros.org/noetic/Installation)
-3. [Ceres 2.1.0](http://ceres-solver.org/installation.html)
-4. [UFOMap (devel_surfel)](https://github.com/brytsknguyen/ufomap/tree/devel_surfel)
-5. [Livox ROS driver (forked)](https://github.com/brytsknguyen/livox_ros_driver)
+# Build & Run
 
-Ubuntu 20.04 and ROS Noetic is a must for compiling SLICT due to UFOMap's [minimum requirement](https://github.com/UnknownFreeOccupied/ufomap/wiki/Setup#installation). However a docker can be used to run SLICT with older OS versions. Please find the instructions below.
+## Prerequisites
 
-# Installation
+The software was developed on the following dependencies. Ubuntu 20.04 and ROS Noetic is a must for compiling SLICT due to UFOMap's [minimum requirement](https://github.com/UnknownFreeOccupied/ufomap/wiki/Setup#installation). However **<u>a docker</u>** can be used to run SLICT with older OS versions. Please find the instructions below.
+- [Ubuntu 20.04](https://releases.ubuntu.com/20.04/) with [ROS Noetic](http://wiki.ros.org/noetic/Installation)
+
+- [Ceres 2.1.0](http://ceres-solver.org/installation.html) 
+
+    ```bash
+    git clone https://ceres-solver.googlesource.com/ceres-solver
+    cd ceres-solver && git fetch --all --tags
+    git checkout tags/2.1.0
+    mkdir build && cd build
+    cmake .. && make -j$(nproc)
+    sudo make install
+    ```
+
+- One more package:
+
+    ```
+    sudo apt install ros-$ROS_DISTRO-tf2-sensor-msgs
+    ```
+
+## Installation
+
+we will clone this repo
+
+1. [SLICT](https://github.com/brytsknguyen/slict)
+2. [UFOMap (devel_surfel)](https://github.com/brytsknguyen/ufomap/tree/devel_surfel)
+3. [Livox ROS driver (forked)](https://github.com/brytsknguyen/livox_ros_driver)
+
 Please install all dependencies first. Afterwards, create a ros workspace, clone the package to the workspace, and build by `catkin build` or `catkin_make`, for e.g.:
 
 ```
-mkdir catkin_ws/src
-cd catkin_ws/src
+mkdir -p slict_ws/src
+cd slict_ws/src
 git clone https://github.com/brytsknguyen/slict
-cd ..; catkin build
+git clone https://github.com/brytsknguyen/ufomap && cd ufomap && git checkout devel_surfel && cd ..
+git clone https://github.com/brytsknguyen/livox_ros_driver
+cd .. && catkin build
 ```
 The launch files for NTU VIRAL, Newer College, MCD VIRAL, and FusionPortable are provided under `launch`
 
 Please raise an issue if you encounter any problem.
+
+## Example
+
+After build step success, run following commands:
+
+```bash
+source devel/setup.zsh
+roslaunch slict run_ntuviral.launch bag_file:=${PATH_HAVE_THE_NTU_BAG}
+# for example
+roslaunch slict run_ntuviral.launch bag_file:=/home/kin/bags/ntu_viral/eee_01/eee_01.bag
+```
+
+![](docs/example.png)
 
 # Docker User
 
