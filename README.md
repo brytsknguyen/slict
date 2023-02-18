@@ -1,7 +1,7 @@
 SLICT: Multi-Input Multi-Scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping
 ===
 
-# Demo Video
+# Introduction Video
 
 <div align="center">
     <a href="https://youtu.be/mogIgBq97Hs" target="_blank">
