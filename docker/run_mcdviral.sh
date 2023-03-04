@@ -25,6 +25,6 @@ docker run \
         $DOCKER_IMG \
         /bin/bash -c \
         "cd /root/catkin_ws/; \
-         catkin_make_isolated; \
-         source devel_isolated/setup.bash; \
+         catkin build; \
+         source devel/setup.bash; \
          roslaunch slict run_mcdviral.launch data_path:=/root/dataset/ exp_log_dir:=/root/slict_logs/mcdviral"

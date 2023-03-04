@@ -22,7 +22,10 @@ RUN if [ "x$(nproc)" = "x1" ] ; then export USE_PROC=1 ; else export USE_PROC=$(
     libatlas-base-dev \
     libeigen3-dev \
     libgoogle-glog-dev \
-    libsuitesparse-dev && \
+    libsuitesparse-dev \
+    python3-wstool \
+    python3-catkin-tools \
+    && \
     # Build and install Ceres
     cd $LIBRARY && \
     git clone https://ceres-solver.googlesource.com/ceres-solver && \
@@ -42,13 +45,19 @@ RUN if [ "x$(nproc)" = "x1" ] ; then export USE_PROC=1 ; else export USE_PROC=$(
 RUN git clone https://github.com/brytsknguyen/ufomap $CATKIN_WS/src/ufomap && \
     cd $CATKIN_WS/src/ufomap && git checkout devel_surfel && cd
 
+WORKDIR $CATKIN_WS
+RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash; cd ${CATKIN_WS}; catkin build'
+
 # Clone and checkout the livox_ros_driver
 RUN git clone https://github.com/brytsknguyen/livox_ros_driver $CATKIN_WS/src/livox_ros_driver
+
+WORKDIR $CATKIN_WS
+RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash; cd ${CATKIN_WS}; catkin build'
 
 # Copy slict code
 COPY ./ $CATKIN_WS/src/slict
 
 # Build the catkin workspace
 WORKDIR $CATKIN_WS
-RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash; cd ${CATKIN_WS}; catkin_make_isolated' && \
-    sed -i '/exec "$@"/i source "/root/catkin_ws/devel_isolated/setup.bash"' /ros_entrypoint.sh
+RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash; cd ${CATKIN_WS}; catkin build' && \
+    sed -i '/exec "$@"/i source "/root/catkin_ws/devel/setup.bash"' /ros_entrypoint.sh
