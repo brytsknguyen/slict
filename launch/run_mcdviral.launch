@@ -6,9 +6,9 @@
 
       <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
       
-      <arg name="data_path" default="/media/tmn/mySataSSD3/MCDVIRAL/"/>
+      <arg name="data_path" default="/media/tmn/mySataSSD2/DATASETS/MCDVIRAL/PublishedSequences"/>
 
-      <arg  name="bag_file"  default="$(arg data_path)/ntu/ntu_day_01/*.bag"/>
+      <arg  name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/>
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
       <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/mcdviral"/>
@@ -31,7 +31,7 @@
 
       <!--- Run Rviz-->
       <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
-            args="-d $(find slict)/launch/mcdviral_atv.rviz" />
+            args="-d $(find slict)/launch/mcdviral.rviz" />
 
       <!-- Play the bag file -->
       <param name="/use_sim_time" value="false" />
