@@ -995,6 +995,22 @@ namespace Util
         return tempCloud;
     }
 
+    static float wrapTo360(float angle)
+    {
+        angle = fmod(angle, 360);
+        if (angle < 0)
+            angle += 360;
+        return angle;
+    }
+
+    static double wrapTo180(double angle)
+    {
+        angle = fmod(angle + 180,360);
+        if (angle < 0)
+            angle += 360;
+        return angle - 180;
+    }
+
     template <typename PoinT>
     static float pointDistance(PoinT p)
     {
