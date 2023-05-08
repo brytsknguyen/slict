@@ -34,19 +34,19 @@
 // #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 
-struct PointHesai
+struct PointBPearl
 {
     PCL_ADD_POINT4D
     float intensity;
-    double timestamp;
     uint16_t ring;                   ///< laser ring number
+    double timestamp;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointHesai,
+POINT_CLOUD_REGISTER_POINT_STRUCT(PointBPearl,
                                  (float, x, x) (float, y, y) (float, z, z)
                                  (float, intensity, intensity)
-                                 (uint16_t, ring, ring)
-                                 (double, timestamp, timestamp))
+                                 (double, timestamp, timestamp)
+                                 (uint16_t, ring, ring))
 
 struct PointOuster
 {
@@ -88,33 +88,33 @@ using namespace std;
 using namespace Eigen;
 using namespace pcl;
 
-class HesaiToOuster
+class BPearlToOuster
 {
 private:
     // Node handler
     ros::NodeHandlePtr nh_ptr;
 
-    ros::Subscriber hesaiCloudSub;
+    ros::Subscriber bpearlCloudSub;
     ros::Publisher ousterCloudPub;
 
     bool remove_human_body = true;
 
 public:
     // Destructor
-    ~HesaiToOuster() {}
+    ~BPearlToOuster() {}
 
-    HesaiToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    BPearlToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
-        hesaiCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/hesai/pandar", 50, &HesaiToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
+        bpearlCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/rslidar_points", 50, &BPearlToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
         ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
     }
 
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
     {
-        pcl::PointCloud<PointHesai> laserCloudHesai;
-        pcl::fromROSMsg(*msgIn, laserCloudHesai);
+        pcl::PointCloud<PointBPearl> laserCloudBPearl;
+        pcl::fromROSMsg(*msgIn, laserCloudBPearl);
         
-        int cloudsize = laserCloudHesai.size();
+        int cloudsize = laserCloudBPearl.size();
 
         CloudOuster laserCloudOuster;
         laserCloudOuster.points.resize(cloudsize);
@@ -126,14 +126,14 @@ public:
         // double max_intensity = -1;
         for (size_t i = 0; i < cloudsize; i++)
         {
-            auto &src = laserCloudHesai.points[i];
+            auto &src = laserCloudBPearl.points[i];
             auto &dst = laserCloudOuster.points[i];
             dst.x = src.x;
             dst.y = src.y;
             dst.z = src.z;
             dst.intensity = src.intensity * hsToOusterIntensity;
             dst.ring = src.ring;
-            dst.t = (int)((src.timestamp - msgIn->header.stamp.toSec()) * 1e9f);
+            dst.t = (int)((src.timestamp- laserCloudBPearl.points[0].timestamp) * 1e9f);
             dst.range = sqrt(src.x*src.x + src.y*src.y + src.z*src.z)*1000.0;
 
             // Remove points on the carrier
@@ -156,13 +156,13 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "hesai_to_ouster");
+    ros::init(argc, argv, "bpearl_to_ouster");
     ros::NodeHandle nh("~");
     ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
-    ROS_INFO("----> hesai to Ouster started");
+    ROS_INFO("----> BPearl to Ouster started");
 
-    HesaiToOuster H2O(nh_ptr);
+    BPearlToOuster B2O(nh_ptr);
 
     ros::MultiThreadedSpinner spinner(0);
     spinner.spin();
