@@ -36,7 +36,6 @@
 
       <!-- Run the Estimator -->
       <param name="/prior_map_dir" type="string" value="$(arg prior_map_dir)" />
-      <param name="/use_prior_map" type="int"    value="$(arg use_prior_map)" />
       <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen">
       </node>
 
