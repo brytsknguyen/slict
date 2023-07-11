@@ -107,6 +107,8 @@ private:
     thread sync_lidar;
     thread sync_data;
     
+    double imu_scale = 1.0;
+
 public:
     // Destructor
     ~SensorSync() {}
@@ -181,6 +183,9 @@ public:
         // Read the IMU topic
         string imu_topic = "/imu_vn_100/imu";
         nh_ptr->getParam("/imu_topic", imu_topic);
+
+        // Get the scale factor
+        nh_ptr->getParam("/imu_scale", imu_scale);
 
         // Read the extrincs of lidars
         vector<double> imu_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -257,7 +262,21 @@ public:
     void ImuHandler(const sensor_msgs::Imu::ConstPtr &msg)
     {
         imu_buf_mtx.lock();
-        imu_buf.push_back(msg);
+
+        if (imu_scale != 1.0)
+        {
+            sensor_msgs::Imu::Ptr scaled_imu(new sensor_msgs::Imu());
+            
+            *scaled_imu = *msg;
+            scaled_imu->linear_acceleration.x *= imu_scale;
+            scaled_imu->linear_acceleration.y *= imu_scale;
+            scaled_imu->linear_acceleration.z *= imu_scale;
+
+            imu_buf.push_back(scaled_imu);
+        }
+        else
+            imu_buf.push_back(msg);
+
         imu_buf_mtx.unlock();
     }
     
