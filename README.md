@@ -121,18 +121,18 @@ Parts of SLICT were used in the course "Optimization-Based Localization and Mapp
 </p>
 
 # Publication
-The details of SLICT are presented in the [paper](https://arxiv.org/abs/2211.03900) (accepted, pending publication) and further elaborated in the attached slides [slides](https://github.com/brytsknguyen/slict/blob/master/docs/GM_20230126_SLICT.pdf). Please cite this work if you find it useful:
+The details of SLICT are presented in the [RA-L paper](https://arxiv.org/abs/2211.03900) and further elaborated in the attached slides [slides](https://github.com/brytsknguyen/slict/blob/master/docs/GM_20230126_SLICT.pdf). Please cite this work if you find it useful:
 
 ```
 @article{nguyen2023slict,
-  title     = {SLICT: Multi-input Multi-scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping},
-  author    = {Nguyen, Thien-Minh and Duberg, Daniel and Jensfelt, Patric and Yuan, Shenghai and Xie, Lihua},
-  journal   = {IEEE Robotics and Automation Letters},
-  volume    = { },
-  number    = { },
-  pages     = {0--8},
-  year      = {2023}
-  publisher = {IEEE}
+  title         = {SLICT: Multi-input Multi-scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping},
+  author        = {Nguyen, Thien-Minh and Duberg, Daniel and Jensfelt, Patric and Yuan, Shenghai and Xie, Lihua},
+  journal       = {IEEE Robotics and Automation Letters},
+  volume        = {8},
+  number        = {4},
+  pages         = {2102--2109},
+  year          = {2023},
+  publisher     = {IEEE}
 }
 ```
 
