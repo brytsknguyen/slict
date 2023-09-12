@@ -56,7 +56,7 @@ assoc_spacing:      0.8
 surfel_map_depth:   16
 surfel_min_point:   10
 surfel_min_depth:   1
-surfel_query_depth: 6             # Equal to Dmax + 1. Dmax is defined in the paper
+surfel_query_depth: 7             # Equal to Dmax + 1. Dmax is defined in the paper
 surfel_intsect_rad: 0.1           # r in the the paper
 surfel_min_plnrty:  0.6
 

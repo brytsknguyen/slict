@@ -6,9 +6,9 @@
 
       <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
       
-      <arg name="data_path" default="/media/tmn/mySataSSD2/DATASETS/Helmet"/>
+      <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/Helmet"/>
 
-      <arg  name="bag_file"  default="$(arg data_path)/helmet_01/*.bag"/>
+      <arg  name="bag_file"  default="$(arg data_path)/helmet_04/*.bag"/>
 
       <!-- Chose the config file based on the sequence names -->
       <arg name="config_file" value="$(find slict)/config/helmet.yaml" if="$(eval 'helmet_'  in bag_file)" />
