@@ -86,7 +86,7 @@ public:
             dst.intensity = src.intensity * hsToOusterIntensity;
             dst.ring = src.ring;
             dst.t = src.time * 1e9f;
-            dst.range = sqrt(src.x * src.x + src.y * src.y + src.z * src.z);
+            dst.range = sqrt(src.x * src.x + src.y * src.y + src.z * src.z)*1000;
         }
 
         Util::publishCloud(ousterCloudPub, laserCloudOuster, msgIn->header.stamp, msgIn->header.frame_id);
