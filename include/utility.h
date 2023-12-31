@@ -111,7 +111,7 @@ using namespace Eigen;
 
 #define yolo() printf("Hello line: %s:%d. \n", __FILE__ , __LINE__);
 #define yolos(...) printf("Hello line: %s:%d. ", __FILE__, __LINE__); printf(__VA_ARGS__); std::cout << std::endl;
-#define MAX_THREADS std::thread::hardware_concurrency()
+#define MAX_THREADS std::thread::hardware_concurrency()/2
 
 /* #region  Custom point type definition --------------------------------------------------------*/
 
