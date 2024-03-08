@@ -27,6 +27,13 @@ lidar_extr:         [
                       0.0,                     0.0,                    0.0,                    1.0
                     ]
 
+# Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
+ds_rate:            [
+                      1
+                      ,
+                      1
+                    ]
+
 # Minimum lidar range to admit
 min_range:          0.5
 
@@ -63,13 +70,6 @@ surfel_min_plnrty:  0.2
 # Distance to surfel and min score thresholds
 dis_to_surfel_max:  0.5
 score_min:          0.05
-
-# Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
-ds_rate:            [
-                      1
-                      ,
-                      1
-                    ]
 
 # Threshold to add new keyframe
 kf_min_dis:         0.5
