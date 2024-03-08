@@ -162,3 +162,9 @@ add_dependencies(${PROJECT_NAME}_m2dgr_to_ouster ${catkin_EXPORTED_TARGETS} ${PR
 target_compile_options(${PROJECT_NAME}_m2dgr_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
 target_link_libraries(${PROJECT_NAME}_m2dgr_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
                                                       ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+
+add_executable(${PROJECT_NAME}_merge_lidar src/MergeLidar.cpp)
+add_dependencies(${PROJECT_NAME}_merge_lidar ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_compile_options(${PROJECT_NAME}_merge_lidar PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_merge_lidar ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
+                                                  ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS})
