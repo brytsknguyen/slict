@@ -239,7 +239,8 @@ public:
         
         // Check for the ring number so we can find the offset
         if(!lidar_ring_offset_set)
-            checkLidarChannel(cloud_inL, idx);
+            lidar_ring_offset_set = checkLidarChannel(cloud_inL, idx);
+
         if(!lidar_ring_offset_set)
             return;
 
@@ -292,7 +293,10 @@ public:
         // Exits the callback if any lidar channel has not been checked
         for(int lidx = 0; lidx < lidar_channels.size(); lidx++)
             if(lidar_channels[idx] == -1)
+            {
+                printf("Lidar %d channel check not completed.\n", idx);
                 return false;
+            }
 
         // All lidar has been checked. Calculate the channels offset
         printf("All lidar channels checked.\n");
@@ -302,7 +306,7 @@ public:
             printf("Lidar %d ring offset: %d\n", lidx, lidar_ring_offset[lidx]);
         }
 
-        lidar_ring_offset_set = false;
+        lidar_ring_offset_set = true;
 
         return true;
     }
@@ -318,44 +322,44 @@ public:
                 continue;
             }
 
-            if (lidar_buf.size() > 1)
-            {
-                printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n"
-                       "Buf 1: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
-                        lidar_buf[0].front().startTime,
-                        lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
-                        lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size(),
-                        lidar_buf[1].front().startTime,
-                        lidar_buf[1].front().endTime, lidar_buf[1].back().endTime,
-                        lidar_buf[1].front().cloud->size(), lidar_buf[1].back().cloud->size(), lidar_buf[1].size());
-            }
+            // if (lidar_buf.size() > 1)
+            // {
+            //     printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n"
+            //            "Buf 1: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
+            //             lidar_buf[0].front().startTime,
+            //             lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
+            //             lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size(),
+            //             lidar_buf[1].front().startTime,
+            //             lidar_buf[1].front().endTime, lidar_buf[1].back().endTime,
+            //             lidar_buf[1].front().cloud->size(), lidar_buf[1].back().cloud->size(), lidar_buf[1].size());
+            // }
 
             // Extract the points
             CloudPacket extracted_points;
             ExtractLidarPoints(extracted_points);
 
-            printf("Extracted: Start: %.3f. End: %.3f. Points: %d. CoT: %.3f. New CoT: %.3f\n",
-                    extracted_points.startTime, extracted_points.endTime, extracted_points.cloud->size(),
-                    cutoff_time, cutoff_time_new);
-            if(!lidar_buf[0].empty())
-            {
-                printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
-                       lidar_buf[0].front().startTime,
-                       lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
-                       lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());    
-            }
+            // printf("Extracted: Start: %.3f. End: %.3f. Points: %d. CoT: %.3f. New CoT: %.3f\n",
+            //         extracted_points.startTime, extracted_points.endTime, extracted_points.cloud->size(),
+            //         cutoff_time, cutoff_time_new);
+            // if(!lidar_buf[0].empty())
+            // {
+            //     printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
+            //            lidar_buf[0].front().startTime,
+            //            lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
+            //            lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());    
+            // }
 
-            if (lidar_buf.size() > 1)
-            {
-                if(!lidar_buf[1].empty())
-                {
-                    printf("Buf 1: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
-                            lidar_buf[1].front().startTime,
-                            lidar_buf[1].front().endTime, lidar_buf[1].back().endTime,
-                            lidar_buf[1].front().cloud->size(), lidar_buf[1].back().cloud->size(), lidar_buf[1].size());
-                }
-            }
-            cout << endl;
+            // if (lidar_buf.size() > 1)
+            // {
+            //     if(!lidar_buf[1].empty())
+            //     {
+            //         printf("Buf 1: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
+            //                 lidar_buf[1].front().startTime,
+            //                 lidar_buf[1].front().endTime, lidar_buf[1].back().endTime,
+            //                 lidar_buf[1].front().cloud->size(), lidar_buf[1].back().cloud->size(), lidar_buf[1].size());
+            //     }
+            // }
+            // cout << endl;
 
             // Update the cutoff time
             cutoff_time = cutoff_time_new;
