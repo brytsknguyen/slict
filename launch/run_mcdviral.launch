@@ -4,11 +4,13 @@
       <arg name="autorun" default="0"/>
       <arg name="loop_en" default="0"/>
 
-      <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
-      
+      <!-- Path to MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
       <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequencesUnzipped/"/>
 
-      <arg  name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/>
+      <!-- Choose the bag file -->
+      <arg name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/>
+      <!-- <arg name="bag_file"  default="$(arg data_path)/kth_day_06/*.bag"/> -->
+      <!-- <arg name="bag_file"  default="$(arg data_path)/tuhh_day_03/*.bag"/> -->
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
       <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/mcdviral"/>
