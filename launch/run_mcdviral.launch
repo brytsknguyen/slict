@@ -8,8 +8,8 @@
       <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequencesUnzipped/"/>
 
       <!-- Choose the bag file -->
-      <arg name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/>
-      <!-- <arg name="bag_file"  default="$(arg data_path)/kth_day_06/*.bag"/> -->
+      <!-- <arg name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/> -->
+      <arg name="bag_file"  default="$(arg data_path)/kth_day_06/*.bag"/>
       <!-- <arg name="bag_file"  default="$(arg data_path)/tuhh_day_03/*.bag"/> -->
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
