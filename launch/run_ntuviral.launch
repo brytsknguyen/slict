@@ -6,9 +6,9 @@
 
       <!-- NTU VIRAL dataset . Downloadable at: https://ntu-aris.github.io/ntuviral_dataset -->
 
-      <arg name="data_path" default="/home/tmn/DATASETS/NTU_VIRAL/"/>
+      <arg name="data_path" default="/media/tmn/mySataSSD21/DATASETS/NTU_VIRAL/DATA/"/>
       
-      <arg  name="bag_file" default="$(arg data_path)/eee_01/eee_01*.bag"/>
+      <!-- <arg  name="bag_file" default="$(arg data_path)/eee_01/eee_01*.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/eee_02/eee_02*.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/eee_02/eee_02*.bag"/> -->
       
@@ -21,7 +21,7 @@
       <!-- <arg  name="bag_file" default="$(arg data_path)/sbs_03/sbs_03*.bag"/> -->
 
       <!-- <arg  name="bag_file" default="$(arg data_path)/rtp_01/rtp_01*.bag"/>   -->
-      <!-- <arg  name="bag_file" default="$(arg data_path)/rtp_02/rtp_02*.bag"/>   -->
+      <arg  name="bag_file" default="$(arg data_path)/rtp_02/rtp_02*.bag"/>  
       <!-- <arg  name="bag_file" default="$(arg data_path)/rtp_03/rtp_03*.bag"/>   -->
 
       <!-- <arg  name="bag_file" default="$(arg data_path)/spms_01/spms_01*.bag"/> -->

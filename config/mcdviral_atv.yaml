@@ -66,9 +66,9 @@ score_min:          0.05
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      2
+                      1
                       ,
-                      2
+                      1
                     ]
 
 # Threshold to add new keyframe
@@ -93,7 +93,7 @@ fuse_imu:           1
 regularize_imu:     1
 imu_init_time:      1.0
 max_outer_iters:    3
-max_lidar_factor:   4000   # Maximum number of lidar factors
+max_lidar_factor:   8000   # Maximum number of lidar factors
 
 # Loop closure parameters
 loop_en:            1

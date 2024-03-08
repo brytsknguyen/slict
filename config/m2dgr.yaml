@@ -3,9 +3,7 @@ autoexit:           0
 
 # Declare the lidar topics to merge
 lidar_topic:        [
-                      "/os1_cloud_node1/points"
-                      # ,
-                      # "/os1_cloud_node2/points"
+                      "/os_cloud_node/points"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -15,23 +13,17 @@ merged_lidar_topic: "/merged_pc"
 # whether stamp is at beginning (1.000) or end (0.000) of scan
 lidar_extr:         [
                       # Horizontal
-                      1.0,  0.0,  0.0, -0.050,
-                      0.0,  1.0,  0.0,  0.000,
-                      0.0,  0.0,  1.0,  0.055,
-                      0.0,  0.0,  0.0,  0.000
-                    #   ,
-                    #   # Vertical
-                    #  -1.0,  0.0,  0.0, -0.550,
-                    #   0.0,  0.0,  1.0,  0.030,
-                    #   0.0,  1.0,  0.0,  0.090,
-                    #   0.0,  0.0,  0.0,  0.000
+                      1.0,  0.0,  0.0,  0.27255,
+                      0.0,  1.0,  0.0, -0.00053,
+                      0.0,  0.0,  1.0,  0.17954,
+                      0.0,  0.0, -0.1,  1.000
                     ]
 
 # Minimum lidar range to admit
-min_range:          0.5
+min_range:          0.0
 
 # IMU topic
-imu_topic:          "/imu/imu"
+imu_topic:          "/handsfree/imu"
 
 # Gravity constant
 GRAV:               9.81007
@@ -52,23 +44,21 @@ N_SUB_SEG:          4
 
 # Downsampling grid size, chose -1 for no downsampling
 leaf_size:          0.05          # Downsample scale of input pointcloud, also the scale of ufomap leaf
-assoc_spacing:      0.8
+assoc_spacing:      0.2
 surfel_map_depth:   16
 surfel_min_point:   10
-surfel_min_depth:   1
+surfel_min_depth:   2
 surfel_query_depth: 7             # Equal to Dmax + 1. Dmax is defined in the paper
 surfel_intsect_rad: 0.1           # r in the the paper
-surfel_min_plnrty:  0.6
+surfel_min_plnrty:  0.7
 
 # Distance to surfel and min score thresholds
-dis_to_surfel_max:  0.3
+dis_to_surfel_max:  0.2
 score_min:          0.0
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      1
-                      # ,
-                      # 1
+                      2
                     ]
 
 # Threshold to add new keyframe
@@ -91,7 +81,7 @@ fuse_lidar:         1
 fuse_imu:           1
 
 regularize_imu:     1
-imu_init_time:      1.0
+imu_init_time:      0.2
 max_outer_iters:    3
 max_lidar_factor:   4000  # Maximum number of lidar factors
 

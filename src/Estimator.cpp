@@ -712,7 +712,7 @@ public:
                 lidar_ds_rate = (max_lidar_factor == -1 ? 1 : max(1, (int)std::floor((double)total_lidar_coef / max_lidar_factor)));
 
                 LIOOptimization(report);
-                
+
                 /* #region Post optimization ------------------------------------------------------------------------*/
 
                 TicToc tt_posproc;
@@ -780,7 +780,7 @@ public:
                 report.tpreopt  = tt_preopt.GetLastStop();
                 report.tpostopt = tt_posproc.GetLastStop();
                 report.tlp      = tt_loop.Toc();
-                
+
                 static double last_tmapping = -1;
                 if (last_tmapping != tt_ufmupdt.GetLastStop())
                 {
@@ -805,9 +805,9 @@ public:
                              "Map: %d\n"
                              "J0:  %15.3f, Ldr: %15.3f. IMU: %15.3f. Vel: %9.3f.\n"
                              "JK:  %15.3f, Ldr: %15.3f. IMU: %15.3f. Vel: %9.3f.\n"
-                             "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f\n"
-                             "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f. Spd: %f\n"
-                             "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Dif: %f.\n"
+                            //  "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f\n"
+                            //  "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f.\n"
+                             "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
                              "DVA:  %s\n"
                              "\n",
                              // Time and iterations
@@ -831,19 +831,18 @@ public:
                              report.J0, report.J0Surf, report.J0Imu, report.J0Vel,
                              // Optimization final costs
                              report.JK, report.JKSurf, report.JKImu, report.JKVel,
-                             // Bias Estimate
-                             ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
-                             ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                            //  // Bias Estimate
+                            //  ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
+                            //  ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
                              // Pose Estimate from propogation
-                             eul_imu.x(), eul_imu.y(), eul_imu.z(),
-                             report.Pimu.x, report.Pimu.y, report.Pimu.z,
-                             report.Vimu.x, report.Vimu.y, report.Vimu.z,
-                             Vest.norm(),
+                            //  eul_imu.x(), eul_imu.y(), eul_imu.z(),
+                            //  report.Pimu.x, report.Pimu.y, report.Pimu.z,
+                            //  report.Vimu.x, report.Vimu.y, report.Vimu.z,
                              // Pose Estimate from Optimization
                              eul_est.x(), eul_est.y(), eul_est.z(),
                              report.Pest.x, report.Pest.y, report.Pest.z,
                              report.Vest.x, report.Vest.y, report.Vest.z,
-                             (Vest - Vimu).norm(),
+                             Vest.norm(), (Vest - Vimu).norm(),
                              // Report on the assocations at different scales
                              DVAReport.c_str());
                 /* #endregion */        
@@ -877,7 +876,7 @@ public:
             /* #endregion STEP 7: LIO optimizaton -------------------------------------------------------------------*/
 
             /* #region STEP 8: Recruit Keyframe ---------------------------------------------------------------------*/
-            
+
             NominateKeyframe();
 
             /* #endregion STEP 8: Recruit Keyframe ------------------------------------------------------------------*/
