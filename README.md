@@ -1,3 +1,6 @@
+**Note: A new version of SLICT using B-spline-based formulation and real-time performance will be updated soon. Please find our publication at:**
+[Eigen Is All You Need: Efficient Lidar-Inertial Continuous-Time Odometry with Internal Association](https://arxiv.org/abs/2402.02337)
+
 SLICT: Multi-Input Multi-Scale Surfel-Based Lidar-Inertial Continuous-Time Odometry and Mapping
 ===
 
