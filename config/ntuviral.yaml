@@ -4,8 +4,8 @@ autoexit:           0
 # Declare the lidar topics to merge
 lidar_topic:        [
                       "/os1_cloud_node1/points"
-                      # ,
-                      # "/os1_cloud_node2/points"
+                      ,
+                      "/os1_cloud_node2/points"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -19,12 +19,12 @@ lidar_extr:         [
                       0.0,  1.0,  0.0,  0.000,
                       0.0,  0.0,  1.0,  0.055,
                       0.0,  0.0,  0.0,  0.000
-                    #   ,
-                    #   # Vertical
-                    #  -1.0,  0.0,  0.0, -0.550,
-                    #   0.0,  0.0,  1.0,  0.030,
-                    #   0.0,  1.0,  0.0,  0.090,
-                    #   0.0,  0.0,  0.0,  0.000
+                      ,
+                      # Vertical
+                     -1.0,  0.0,  0.0, -0.550,
+                      0.0,  0.0,  1.0,  0.030,
+                      0.0,  1.0,  0.0,  0.090,
+                      0.0,  0.0,  0.0,  0.000
                     ]
 
 # Minimum lidar range to admit
