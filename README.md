@@ -87,6 +87,7 @@ cd slict_ws/src
 git clone https://github.com/brytsknguyen/slict
 git clone https://github.com/brytsknguyen/ufomap && cd ufomap && git checkout devel_surfel && cd ..
 git clone https://github.com/brytsknguyen/livox_ros_driver
+git clone https://github.com/brytsknguyen/livox_ros_driver2
 cd .. && catkin build
 ```
 The launch files for NTU VIRAL, Newer College, MCD VIRAL, and FusionPortable are provided under `launch`
