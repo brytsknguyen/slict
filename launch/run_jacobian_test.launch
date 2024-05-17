@@ -1,0 +1,3 @@
+<launch>
+      <node pkg="slict" type="slict_test_analytic_jacobian" name="test" output="screen"/>
+</launch>

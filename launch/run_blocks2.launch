@@ -1,0 +1,68 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun" default="0"/>
+      <arg name="loop_en" default="0"/>
+
+      <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
+      
+      <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/blocks2/"/>
+
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/01_B3_loop.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/02_B3B4_full.bag"/> -->
+      <arg  name="bag_file"  default="$(arg data_path)/03_B3B4_half.bag"/>
+
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="0"/>
+
+      <!-- Manual initialization for reloc -->
+      <group if="$(eval 'blocks2_01' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [56.14, 106.63, 7.58,  18, 0, 0] </rosparam> </group>
+      <group if="$(eval 'blocks2_02' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [55.07, 105.76, 7.71, -17, 0, 0] </rosparam> </group>
+      <group if="$(eval 'blocks2_03' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [55.65, 104.97, 7.68, -32, 0, 0] </rosparam> </group>
+
+      <!-- Chose the config file based on the sequence names -->
+      <arg name="config_file" value="$(find slict)/config/blocks2.yaml"/>
+
+      <!-- Priormap file -->
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMap/NTUCampus/nkcamp_prior_slict"/>
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/blocks2"/>
+
+      <!-- Load the param -->
+      <rosparam file="$(arg config_file)" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the livox to ouster converter -->
+      <node pkg="slict" required="true" type="slict_livox2_to_ouster" name="slict_livox2_to_ouster" respawn="false" output="screen"/>
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
+
+      <!-- Run the Estimator -->
+      <param name="/prior_map_dir" type="string" value="$(arg prior_map_dir)" />
+      <param name="/use_prior_map" type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report"   type="int"    value="1"/>
+      <param name="/slam_ref_frame" type="string" value="odom"/>
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+      
+      <!-- Run the imu predictor -->
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
+            args="-d $(find slict)/launch/blocks2.rviz" />
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+      <arg name="wait_time" value="$(eval use_prior_map*15 + 1)" />
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s 0.0"
+            launch-prefix="bash -c 'sleep $(arg wait_time); $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

@@ -1,0 +1,66 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun" default="0"/>
+      <arg name="loop_en" default="0"/>
+
+      <!-- HILTI Challenge -->
+      <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/HILTI2023/site1_handheld_1.bag"/>
+      <!-- <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/HILTI2023/site1_handheld_2.bag"/> -->
+      
+      <!-- <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/HILTI2023/site2_robot_1.bag"/> -->
+
+      <arg name="config_file" value="hilti2023_hhs"   if="$(eval 'handheld' in bag_file)" />
+      <arg name="config_file" value="hilti2023_robot" if="$(eval 'robot' in bag_file)" />
+
+      <arg name="convert_type" value="hesai"  if="$(eval 'handheld' in bag_file)" />
+      <arg name="convert_type" value="bpearl" if="$(eval 'robot' in bag_file)" />
+
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="0"/>
+
+      <!-- Priormap file -->
+      <arg name="prior_map_dir" default="" />
+      
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/hilti2023"/>
+
+      <!-- Load the param -->
+      <rosparam file="$(find slict)/config/$(arg config_file).yaml" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the sensor converter -->
+      <node pkg="slict" type="slict_$(arg convert_type)_to_ouster" name="slict_$(arg convert_type)_to_ouster" respawn="false" output="log" required="true">
+            <param name="remove_human_body" value="false"/>
+      </node>
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log" required="true"/>
+
+      <!-- Run the Estimator -->
+      <param name="/prior_map_dir"  type="string" value="$(arg prior_map_dir)" />
+      <param name="/use_prior_map"  type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report"    type="int"    value="1"/>
+      <param name="/slam_ref_frame" type="string" value="odom"/>
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+
+      <!-- Run the imu predictor -->
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+      
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
+            args="-d $(find slict)/launch/hilti2023.rviz" />
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s 87"
+            launch-prefix="bash -c 'sleep 1; $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

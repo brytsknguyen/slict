@@ -1,5 +1,5 @@
 /**
- * This file is part of SLICT.
+ * This file is part of slict.
  *
  * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot
  * sg>, School of EEE Nanyang Technological Univertsity, Singapore
@@ -9,31 +9,33 @@
  * If you use this code, please cite the respective publications as
  * listed on the above websites.
  *
- * SLICT is free software: you can redistribute it and/or modify
+ * slict is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * SLICT is distributed in the hope that it will be useful,
+ * slict is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
+ * along with slict.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 //
 // Created by Thien-Minh Nguyen on 01/08/22.
 //
 
-#include <boost/filesystem.hpp>
-#include <boost/format.hpp>
+#include <filesystem>
+// #include <boost/format.hpp>
 #include <condition_variable>
 #include <deque>
 #include <thread>
+#include <stdexcept>
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <ceres/ceres.h>
 #include <cv_bridge/cv_bridge.h>
 
@@ -55,7 +57,15 @@
 #include <pcl/filters/impl/crop_box.hpp>
 /* All needed for filter of custom point type----------*/
 
+// Basalt
+#include "basalt/spline/se3_spline.h"
+#include "basalt/spline/ceres_spline_helper.h"
+#include "basalt/spline/ceres_local_param.hpp"
+#include "basalt/spline/posesplinex.h"
+
+// ROS
 #include "std_msgs/Header.h"
+#include "std_msgs/String.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "nav_msgs/Odometry.h"
 #include "nav_msgs/Path.h"
@@ -75,21 +85,60 @@
 #include <ufomap_ros/conversions.h>
 
 // Factor
-#include <factor/Point2PlaneDisFactorCT.h>
-#include <PreintBase.h>
-#include <factor/PreintFactor.h>
 #include "PoseLocalParameterization.h"
+// #include "PreintBase.h"
+// #include "factor/PreintFactor.h"
+// #include "factor/PointToPlaneDisFactorCT.h"
 #include "factor/RelOdomFactor.h"
+// #include "factor/PoseFactorCT.h"
+#include "factor/PoseAnalyticFactor.h"
+#include "factor/PointToPlaneAnalyticFactor.hpp"
+#include "factor/GyroAcceBiasAnalyticFactor.h"
+#include "factor/VelocityAnalyticFactor.h"
 
 // Custom for package
 #include "utility.h"
 #include "slict/FeatureCloud.h"
 #include "slict/OptStat.h"
-// #include "CloudMatcher.hpp"
+#include "slict/TimeLog.h"
+#include "CloudMatcher.hpp"
+
+// Add ikdtree
+#include <ikdTree/ikd_Tree.h>
+
+// myGN solver
+#include "mySolver.h"
+#include "factor/GyroAcceBiasFactorTMN.hpp"
+#include "factor/Point2PlaneFactorTMN.hpp"
+
+#include "PointToMapAssoc.h"
+
+// #include "MapManager.hpp"
+
+// #define SPLINE_N 4
 
 using namespace std;
 using namespace Eigen;
 using namespace pcl;
+using namespace basalt;
+
+// Shorthands for ufomap
+namespace ufopred     = ufo::map::predicate;
+using ufoSurfelMap    = ufo::map::SurfelMap;
+using ufoSurfelMapPtr = boost::shared_ptr<ufoSurfelMap>;
+using ufoNode         = ufo::map::NodeBV;
+using ufoSphere       = ufo::geometry::Sphere;
+using ufoPoint3       = ufo::map::Point3;
+//Create a prototype for predicates
+auto PredProto = ufopred::HasSurfel()
+              && ufopred::DepthMin(1)
+              && ufopred::DepthMax(1)
+              && ufopred::NumSurfelPointsMin(1)
+              && ufopred::SurfelPlanarityMin(0.2);
+// Declare the type of the predicate as a new type
+typedef decltype(PredProto) PredType;
+
+typedef Sophus::SE3d SE3d;
 
 class Estimator
 {
@@ -99,7 +148,14 @@ private:
     // Node handler
     ros::NodeHandlePtr nh_ptr;
     ros::Time program_start_time;
+    
+    // The coordinate frame at the initial position of the slam
+    string slam_ref_frame = "world";
+    // The coordinate frame that states on the sliding window is using
+    string current_ref_frame = slam_ref_frame;
+
     bool autoexit = false;
+    bool show_report = true;
 
     // Subscribers
     ros::Subscriber data_sub;
@@ -116,6 +172,22 @@ private:
     int  N_SUB_SEG   = 4;
 
     Vector3d GRAV = Vector3d(0, 0, 9.82);
+
+    // Spline representing the trajectory
+    // using PoseSpline = basalt::Se3Spline<SPLINE_N>;
+    using PoseSplinePtr = std::shared_ptr<PoseSplineX>;
+    PoseSplinePtr GlobalTraj = nullptr;
+    
+    int    SPLINE_N       = 4;
+    double deltaT         = 0.05;
+    double start_fix_span = 0.05;
+    double final_fix_span = 0.05;
+
+    int reassociate_steps = 0;
+    int reassoc_rate = 3;
+    vector<int> deskew_method = {0, 0};
+
+    bool use_ceres = true;
 
     // Sliding window data (prefixed "Sw" )
     struct TimeSegment
@@ -134,16 +206,12 @@ private:
     };
     deque<deque<TimeSegment>> SwTimeStep;
     deque<CloudXYZITPtr>      SwCloud;
-    deque<CloudXYZITPtr>      SwCloudDsk;
-    deque<CloudXYZITPtr>      SwCloudDskDS;
-    deque<deque<LidarCoef>>   SwLidarCoef;
+    deque<CloudXYZIPtr>       SwCloudDsk;
+    deque<CloudXYZIPtr>       SwCloudDskDS;
+    deque<vector<LidarCoef>>  SwLidarCoef;
     deque<map<int, int>>      SwDepVsAssoc;
     deque<deque<ImuSequence>> SwImuBundle;      // ImuSample defined in utility.h
     deque<deque<ImuProp>>     SwPropState;
-
-    // Surfelized scans
-    using ufoSurfelMap = ufo::map::SurfelMap;
-    using ufoNode = ufo::map::Node;
 
     // Check list for adjusting the computation
     map<int, int> DVA;
@@ -156,17 +224,25 @@ private:
     deque<deque<Vector3d>> ssBia, sfBia;
     deque<deque<Vector3d>> ssBig, sfBig;
 
-    // Sensor weight
-    double GYR_N = 5.0e-2;
-    double GYR_W = 3.0e-3;
-    double ACC_N = 6.0e-1;
-    double ACC_W = 8.0e-2;
+    // IMU weight
+    double GYR_N = 10;
+    double GYR_W = 10;
+    double ACC_N = 0.5;
+    double ACC_W = 10;
 
-    double lidar_weight = 30;
+    double ACC_SCALE = 1.0;
 
-    double qpprop_weight = 0.1;
-    double vel_weight = 1.0;
-    double rot_weight = 1.0;
+    // Velocity weight
+    double POSE_N = 5;
+
+    // Velocity weight
+    double VEL_N = 10;
+
+    // Lidar weight
+    double lidar_weight = 10;
+
+    Vector3d BG_BOUND = Vector3d(0.1, 0.1, 0.1);
+    Vector3d BA_BOUND = Vector3d(0.1, 0.1, 0.2);
 
     int last_fixed_knot = 0;
     int first_fixed_knot = 0;
@@ -180,43 +256,77 @@ private:
     double surfel_intsect_rad = 0.5;
     double surfel_min_plnrty = 0.8;
 
+    PredType *commonPred;
+
     // Size of k-nearest neighbourhood for the knn search
     double dis_to_surfel_max = 0.05;
     double score_min = 0.1;
     
     // Lidar downsample rate
     int lidar_ds_rate = 1;
+    int sweep_len = 1;
 
     // Optimization parameters
     double lidar_loss_thres = 1.0;
+    double imu_loss_thres = -1.0;
+
+    // Keeping track of preparation before solving
+    TicToc tt_preopt;
+    TicToc tt_fitspline;
+    double t_slv_budget;
 
     // Solver config
+    ceres::LinearSolverType linSolver;
     ceres::TrustRegionStrategyType trustRegType;     // LEVENBERG_MARQUARDT, DOGLEG
     ceres::DenseLinearAlgebraLibraryType linAlgbLib; // EIGEN, LAPACK, CUDA
     double max_solve_time = 0.5;
     int max_iterations = 200;
+    bool ensure_real_time = true;
+    bool find_factor_cost = false;
+    bool fit_spline = false;
 
     // Sensors used
     bool fuse_lidar      = true;
     bool fuse_imu        = true;
+    bool fuse_poseprop   = true;
+    bool fuse_velprop    = true;
     
     bool snap_to_0180    = false;
     bool regularize_imu  = true;
+    bool lite_redeskew   = false;
     int  fix_mode        = 1;
     double imu_init_time = 0.1;
     int max_outer_iters  = 1;
+    double dj_thres      = 0.1;
     int max_lidar_factor = 5000;
 
     // Map
-    CloudPosePtr         KfCloudPose;
-    deque<CloudXYZITPtr> KfCloudinB;
-    deque<CloudXYZITPtr> KfCloudinW;
+    CloudPosePtr        KfCloudPose;
+    deque<CloudXYZIPtr> KfCloudinB;
+    deque<CloudXYZIPtr> KfCloudinW;
+
+    bool refine_kf = false;
 
     int    ufomap_version = 0;
     mutex  global_map_mtx;
-    TicToc tt_ufmupdt;
-    CloudXYZITPtr globalMap;
-    ufoSurfelMap  surfelMap;
+    CloudXYZIPtr globalMap;
+
+    TicToc tt_margcloud;
+    TicToc tt_ufoupdate;
+
+    mutex map_mtx;
+    ufoSurfelMapPtr activeSurfelMap;
+    ikdtreePtr activeikdtMap;
+
+    mutex mapqueue_mtx;
+    deque<CloudXYZIPtr> mapqueue;
+    thread thread_update_map;
+
+    ufoSurfelMapPtr priorSurfelMapPtr;
+    ufoSurfelMap priorSurfelMap;
+
+    ikdtreePtr priorikdtMapPtr;
+    // ikdtree priorikdtMap;
 
     // Loop closure
     bool loop_en = true;
@@ -265,11 +375,11 @@ private:
 
     struct KeyframeCand
     {
-        KeyframeCand(double start_time_, double end_time_, CloudXYZITPtr kfCloud_)
+        KeyframeCand(double start_time_, double end_time_, CloudXYZIPtr kfCloud_)
             : start_time(start_time_), end_time(end_time_), kfCloud(kfCloud_) {};
         double start_time;
         double end_time;
-        CloudXYZITPtr kfCloud;
+        CloudXYZIPtr kfCloud;
     };
     
     // Publisher for global map.
@@ -283,26 +393,70 @@ private:
     
     // Publisher for latest keyframe
     ros::Publisher kfcloud_pub;
+    ros::Publisher kfcloud_std_pub;
     ros::Publisher kfpose_pub;
 
     // Log
     string log_dir = "/home/tmn";
+    string log_dir_kf;
     std::ofstream loop_log_file;
 
+    // PriorMap
+    bool use_prior_map = false;
+
+    std::thread initPriorMapThread;
+
+    // For visualization
+    CloudXYZIPtr  pmSurfGlobal;
+    CloudXYZIPtr  pmEdgeGlobal;
+
+    CloudXYZIPtr  priorMap;
+    
+    deque<CloudXYZIPtr> pmFull;
+    CloudPosePtr pmPose;
+
+    bool pmLoaded = false;
+
+    // KdTreeFLANN<PointXYZI>::Ptr kdTreePriorMap;
+
+    ros::Publisher priorMapPub;
+    ros::Timer     pmVizTimer;
+
+    double priormap_viz_res = 0.2;
+    
+    // ufoSurfelMap surfelMapSurf;
+    // ufoSurfelMap surfelMapEdge;
+
+    // Use ufomap or ikdtree;
+    bool use_ufm = false;
+    
 public:
     // Destructor
     ~Estimator() {}
 
     Estimator(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
-    {
+    {   
+        // Normal Processes
         Initialize();
+
+        // Inialize Prior map
+        InitializePriorMap();
+
     }
 
     void Initialize()
     {
+
         program_start_time = ros::Time::now();
 
         autoexit = GetBoolParam("/autoexit", false);
+
+        // Disable report
+        show_report = GetBoolParam("/show_report", true);
+
+        // Get the coordinate frame of choice
+        nh_ptr->getParam("/slam_ref_frame", slam_ref_frame);
+        current_ref_frame = slam_ref_frame;
 
         // Maximum number of threads
         printf("Maximum number of threads: %d\n", MAX_THREADS);
@@ -324,6 +478,16 @@ public:
             exit(-1);
         }
 
+        nh_ptr->param("/SPLINE_N", SPLINE_N, 4);
+        nh_ptr->param("/deltaT", deltaT, 0.05);
+        nh_ptr->param("/start_fix_span", start_fix_span, 0.05);
+        nh_ptr->param("/final_fix_span", final_fix_span, 0.05);
+        nh_ptr->param("/reassociate_steps", reassociate_steps, 0);
+        nh_ptr->param("/deskew_method", deskew_method, deskew_method);
+        nh_ptr->param("/reassoc_rate", reassoc_rate, 3);
+
+        use_ceres = GetBoolParam("/use_ceres", false);
+
         // Initialize the states in the sliding window
         ssQua = sfQua = deque<deque<Quaternd>>(WINDOW_SIZE, deque<Quaternd>(N_SUB_SEG, Quaternd::Identity()));
         ssPos = sfPos = deque<deque<Vector3d>>(WINDOW_SIZE, deque<Vector3d>(N_SUB_SEG, Vector3d(0, 0, 0)));
@@ -342,13 +506,30 @@ public:
         nh_ptr->getParam("/ACC_N", ACC_N);
         nh_ptr->getParam("/ACC_W", ACC_W);
 
-        printf("Gyro variance: "); printf("%f ", GYR_N); cout << endl;
-        printf("Bgyr variance: "); printf("%f ", GYR_W); cout << endl;
-        printf("Acce variance: "); printf("%f ", ACC_N); cout << endl;
-        printf("Bacc variance: "); printf("%f ", ACC_W); cout << endl;
+        printf("Gyro variance: %f\n", GYR_N);
+        printf("Bgyr variance: %f\n", GYR_W);
+        printf("Acce variance: %f\n", ACC_N);
+        printf("Bacc variance: %f\n", ACC_W);
+
+        nh_ptr->getParam("/POSE_N", POSE_N);
+        printf("Position prior variance: %f\n", POSE_N);
+
+        nh_ptr->getParam("/VEL_N", VEL_N);
+        printf("Velocity variance: %f\n", VEL_N);
 
         // Sensor weightage
         nh_ptr->getParam("/lidar_weight", lidar_weight);
+
+        // Bias bounds
+        vector<double> BG_BOUND_ = {0.1, 0.1, 0.1};
+        vector<double> BA_BOUND_ = {0.1, 0.1, 0.2};
+        nh_ptr->getParam("/BG_BOUND", BG_BOUND_);
+        nh_ptr->getParam("/BA_BOUND", BA_BOUND_);
+        BG_BOUND = Vector3d(BG_BOUND_[0], BG_BOUND_[1], BG_BOUND_[2]);
+        BA_BOUND = Vector3d(BA_BOUND_[0], BA_BOUND_[1], BA_BOUND_[2]);
+
+        // If use ufm for incremental map
+        use_ufm = GetBoolParam("/use_ufm", false);
 
         // Downsample size
         nh_ptr->getParam("/leaf_size",          leaf_size);
@@ -369,20 +550,50 @@ public:
         printf("surfel_intsect_rad: %f\n", surfel_intsect_rad);
         printf("surfel_min_plnrty:  %f\n", surfel_min_plnrty);
 
+        commonPred = new PredType(ufopred::HasSurfel()
+                               && ufopred::DepthMin(surfel_min_depth)
+                               && ufopred::DepthMax(surfel_query_depth - 1)
+                               && ufopred::NumSurfelPointsMin(surfel_min_point)
+                               && ufopred::SurfelPlanarityMin(surfel_min_plnrty));
+
         // Number of neigbours to check for in association
         nh_ptr->getParam("/dis_to_surfel_max", dis_to_surfel_max);
         nh_ptr->getParam("/score_min", score_min);
         // Lidar feature downsample rate
         // nh_ptr->getParam("/ds_rate", ds_rate);
+        // Lidar sweep len by number of scans merged
+        nh_ptr->getParam("/sweep_len", sweep_len);
 
         // Keyframe params
         nh_ptr->getParam("/kf_min_dis", kf_min_dis);
         nh_ptr->getParam("/kf_min_angle", kf_min_angle);
+        // Refine keyframe with ICP
+        refine_kf = GetBoolParam("/refine_kf", false);
 
         // Optimization parameters
         nh_ptr->getParam("/lidar_loss_thres", lidar_loss_thres);
 
         // Solver
+        string linSolver_;
+        nh_ptr->param("/linSolver", linSolver_, string("dqr"));
+        if (linSolver_ == "dqr")
+            linSolver = ceres::DENSE_QR;
+        else if( linSolver_ == "dnc")
+            linSolver = ceres::DENSE_NORMAL_CHOLESKY;
+        else if( linSolver_ == "snc")
+            linSolver = ceres::SPARSE_NORMAL_CHOLESKY;
+        else if( linSolver_ == "cgnr")
+            linSolver = ceres::CGNR;
+        else if( linSolver_ == "dschur")
+            linSolver = ceres::DENSE_SCHUR;
+        else if( linSolver_ == "sschur")
+            linSolver = ceres::SPARSE_SCHUR;
+        else if( linSolver_ == "ischur")
+            linSolver = ceres::ITERATIVE_SCHUR;
+        else
+            linSolver = ceres::SPARSE_NORMAL_CHOLESKY;
+        printf(KYEL "/linSolver: %d. %s\n" RESET, linSolver, linSolver_.c_str());
+
         string trustRegType_;
         nh_ptr->param("/trustRegType", trustRegType_, string("lm"));
         if (trustRegType_ == "lm")
@@ -399,32 +610,41 @@ public:
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::EIGEN;
         else if(linAlgbLib_ == "lapack")
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::LAPACK;
-        // else if(linAlgbLib_ == "cuda")
-        //     linAlgbLib = ceres::DenseLinearAlgebraLibraryType::CUDA;
+        else if(linAlgbLib_ == "cuda")
+            linAlgbLib = ceres::DenseLinearAlgebraLibraryType::CUDA;
         else
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::EIGEN;
         printf(KYEL "/linAlgbLib: %d. %s\n" RESET, linAlgbLib, linAlgbLib_.c_str());
 
         nh_ptr->param("/max_solve_time", max_solve_time,  0.5);
         nh_ptr->param("/max_iterations", max_iterations,  200);
+        
+        ensure_real_time = GetBoolParam("/ensure_real_time", true);
+        find_factor_cost = GetBoolParam("/find_factor_cost", true);
+        fit_spline       = GetBoolParam("/fit_spline", true);
 
         // Fusion option
         fuse_lidar     = GetBoolParam("/fuse_lidar",     true);
         fuse_imu       = GetBoolParam("/fuse_imu",       true);
+        fuse_poseprop  = GetBoolParam("/fuse_poseprop",  true);
+        fuse_velprop   = GetBoolParam("/fuse_velprop",   true);
 
         snap_to_0180   = GetBoolParam("/snap_to_0180",   false);
         regularize_imu = GetBoolParam("/regularize_imu", true);
+        lite_redeskew  = GetBoolParam("/lite_redeskew",  false);
 
         nh_ptr->param("/fix_mode",         fix_mode,         1);
         nh_ptr->param("/imu_init_time",    imu_init_time,    0.1);
         nh_ptr->param("/max_outer_iters",  max_outer_iters,  1);
         nh_ptr->param("/max_lidar_factor", max_lidar_factor, 4000);
+        nh_ptr->param("/dj_thres",         dj_thres,         0.1);
 
         printf("max_outer_iters: %d.\n"
+               "dj_thres:        %f.\n" 
                "fix_mode:        %d.\n"
                "max_iterations:  %d.\n"
                "imu_init_time:   %f\n",
-                max_outer_iters, fix_mode, max_iterations, imu_init_time);
+                max_outer_iters, dj_thres, fix_mode, max_iterations, imu_init_time);
         
         // Loop parameters
         loop_en = GetBoolParam("/loop_en", true);
@@ -441,9 +661,15 @@ public:
         nh_ptr->param("/loop_weight", loop_weight, 0.1);
         
         // Map inertialization
-        KfCloudPose = CloudPosePtr(new CloudPose());
-        globalMap = CloudXYZITPtr(new CloudXYZIT());
-        surfelMap = ufoSurfelMap(leaf_size, surfel_map_depth);
+        KfCloudPose   = CloudPosePtr(new CloudPose());
+
+        // Create a handle to the global map
+        activeSurfelMap = ufoSurfelMapPtr(new ufoSurfelMap(leaf_size, surfel_map_depth));
+        // Create an ikdtree
+        activeikdtMap = ikdtreePtr(new ikdtree(0.5, 0.6, leaf_size));
+
+        // For visualization
+        globalMap = CloudXYZIPtr(new CloudXYZI());
 
         // Advertise the global map
         global_map_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/global_map", 10);
@@ -457,16 +683,196 @@ public:
         kfcloud_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/kfcloud", 10);
         kfpose_pub  = nh_ptr->advertise<sensor_msgs::PointCloud2>("/kfpose", 10);
 
+        kfcloud_std_pub = nh_ptr->advertise<slict::FeatureCloud>("/kfcloud_std", 10);
+
         // Advertise the service
         global_maps_srv = nh_ptr->advertiseService("/global_maps_publish", &Estimator::PublishGlobalMaps, this);
 
         // Log file
         log_dir = nh_ptr->param("/log_dir", log_dir);
+        log_dir_kf = log_dir + "/KFCloud/";
         std::filesystem::create_directories(log_dir);
+        std::filesystem::create_directories(log_dir_kf);
 
         loop_log_file.open(log_dir + "/loop_log.csv");
         loop_log_file.precision(std::numeric_limits<double>::digits10 + 1);
         // loop_log_file.close();
+
+        // Create a prior map manager
+        // mapManager = new MapManager(nh_ptr);
+
+        // Create a thread to update the map
+        thread_update_map = thread(&Estimator::UpdateMap, this); ;
+    }
+
+    void InitializePriorMap()
+    {
+        TicToc tt_initprior;
+
+        use_prior_map = GetBoolParam("/use_prior_map", false);
+        printf("use_prior_map:   %d\n", use_prior_map);
+
+        if (!use_prior_map)
+            return;
+
+        // Check if initial pose is available
+        if(ros::param::has("/tf_Lprior_L0_init"))
+        {
+            vector<double> tf_Lprior_L0_init_;
+            nh_ptr->param("/tf_Lprior_L0_init", tf_Lprior_L0_init_, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+            printf(KYEL "tf_Lprior_L0_init: %.3f, %.3f, %.3f, %.3f, %.3f, %.3f\n" RESET,
+                         tf_Lprior_L0_init_[0], tf_Lprior_L0_init_[1], tf_Lprior_L0_init_[2],
+                         tf_Lprior_L0_init_[3], tf_Lprior_L0_init_[4], tf_Lprior_L0_init_[5]);
+            
+            myTf tf_Lprior_L0_init(Util::YPR2Quat(tf_Lprior_L0_init_[3], tf_Lprior_L0_init_[4], tf_Lprior_L0_init_[5]),
+                                   Vector3d(tf_Lprior_L0_init_[0], tf_Lprior_L0_init_[1], tf_Lprior_L0_init_[2]));
+            
+            // lock_guard<mutex>lg(relocBufMtx);
+            // relocBuf.push_back(tf_Lprior_L0_init);
+        }
+
+        // Downsampling rate for visualizing the priormap
+        nh_ptr->param("/priormap_viz_res", priormap_viz_res, 0.2);
+
+        // Subscribe to the relocalization
+        // relocSub = nh_ptr->subscribe("/reloc_pose", 100, &Estimator::RelocCallback, this);
+
+        // pmSurfGlobal = CloudXYZIPtr(new CloudXYZI());
+        // pmEdgeGlobal = CloudXYZIPtr(new CloudXYZI());
+        priorMap = CloudXYZIPtr(new CloudXYZI());
+
+        // Initializing priormap
+        priorMapPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/priormap", 10);
+
+        string prior_map_dir = "";
+        nh_ptr->param("/prior_map_dir", prior_map_dir, string(""));
+
+        // Read the pose log of priormap
+        string pmPose_ = prior_map_dir + "/kfpose6d.pcd";
+        pmPose = CloudPosePtr(new CloudPose());
+        pcl::io::loadPCDFile<PointPose>(pmPose_, *pmPose);
+
+        int PM_KF_COUNT = pmPose->size();
+        printf(KGRN "Prior map path %s. Num scans: %d. Begin loading ...\n" RESET, pmPose_.c_str(), pmPose->size());
+
+        if (!std::filesystem::exists(prior_map_dir + "/ufo_surf_map.um"))
+        {
+            printf("Prebuilt UFO surf map not found, creating one.\n");
+
+            // Reading the surf feature from log
+            pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
+            #pragma omp parallel for num_threads(MAX_THREADS)
+            for (int i = 0; i < PM_KF_COUNT; i++)
+            {
+                pmFull[i] = CloudXYZIPtr(new CloudXYZI());
+                string pmFull_ = prior_map_dir + "/pointclouds/Full/" + "KfFullPcl_" + to_string(i) + ".pcd";
+                pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+
+                printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
+            }
+
+            pmLoaded = true;
+            
+            printf("Merging the scans:\n");
+
+            // Merge the scans
+            for (int i = 0; i < PM_KF_COUNT; i++)
+            {
+                *priorMap += *pmFull[i];
+                printf("Scan %s merged\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
+            }
+
+            printf("Surfelizing the prior map.\n");
+
+            priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(leaf_size, surfel_map_depth));
+            insertCloudToSurfelMap(*priorSurfelMapPtr, *priorMap);
+
+            // Downsample the prior map for visualization in another thread
+            auto pmVizFunctor = [this](const CloudXYZIPtr& priorMap_)->void
+            {
+                // CloudXYZI priorMapDS;
+                pcl::UniformSampling<PointXYZI> downsampler;
+                downsampler.setRadiusSearch(priormap_viz_res);
+                downsampler.setInputCloud(priorMap);
+                downsampler.filter(*priorMap);
+
+                Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
+
+                for(auto &cloud : pmFull)
+                    cloud->clear();
+                
+                return;
+            };
+            initPriorMapThread = std::thread(pmVizFunctor, std::ref(priorMap));
+
+           printf("Save the prior map...\n");
+
+           // Save the ufomap object
+           priorSurfelMapPtr->write(prior_map_dir + "/ufo_surf_map.um");
+        }
+        else
+        {
+            printf("Prebuilt UFO surf map found, loading...\n");
+            priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(prior_map_dir + "/ufo_surf_map.um"));
+
+            // Merge and downsample the prior map for visualization in another thread
+            auto pmVizFunctor = [this](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
+            {
+                // Reading the surf feature from log
+                pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
+                #pragma omp parallel for num_threads(MAX_THREADS)
+                for (int i = 0; i < PM_KF_COUNT; i++)
+                {
+                    pmFull[i] = CloudXYZIPtr(new CloudXYZI());
+                    string pmFull_ = prior_map_dir + "/pointclouds/Full/" + "KfFullPcl_" + to_string(i) + ".pcd";
+                    pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+
+                    printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
+                }
+
+                pmLoaded = true;
+                
+                // Merge the scans
+                for (int i = 0; i < pmFull.size(); i++)
+                {
+                    *priorMap += *pmFull[i];
+                    // printf("Map size: %d\n", priorMap->size());
+                }
+
+                // CloudXYZI priorMapDS;
+                pcl::UniformSampling<PointXYZI> downsampler;
+                downsampler.setRadiusSearch(priormap_viz_res);
+                downsampler.setInputCloud(priorMap);
+                downsampler.filter(*priorMap);
+
+                Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
+
+                for(auto &cloud : pmFull)
+                    cloud->clear();
+                
+                return;
+            };
+            initPriorMapThread = std::thread(pmVizFunctor, prior_map_dir, PM_KF_COUNT, std::ref(priorMap));
+        }
+
+        // printf(KYEL "Surfelizing the scans.\n" RESET);
+
+        // // Surfelize the surf map
+        // surfelMapSurf = ufoSurfelMap(leaf_size);
+        // insertCloudToSurfelMap(surfelMapSurf, *pmSurfGlobal);
+
+        // // Surfelize the edge map
+        // surfelMapEdge = ufoSurfelMap(leaf_size);
+        // insertCloudToSurfelMap(surfelMapEdge, *pmEdgeGlobal);
+
+        printf(KGRN "Done. Time: %f\n" RESET, tt_initprior.Toc());
+
+        // pmVizTimer = nh_ptr->createTimer(ros::Duration(5.0), &Estimator::PublishPriorMap, this);
+    }
+
+    void PublishPriorMap(const ros::TimerEvent& event)
+    {
+        Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
     }
 
     bool GetBoolParam(string param, bool default_value)
@@ -474,6 +880,11 @@ public:
         int param_;
         nh_ptr->param(param, param_, default_value == true ? 1 : 0);
         return (param_ == 0 ? false : true);
+    }
+
+    bool TimeIsValid(PoseSplineX &traj, double time, double tolerance = 0)
+    {
+        return traj.minTime() + tolerance < time && time < traj.maxTime() - tolerance;
     }
 
     void DataHandler(const slict::FeatureCloud::ConstPtr &msg)
@@ -486,7 +897,8 @@ public:
     {
         while (ros::ok())
         {
-            
+            slict::TimeLog tlog; TicToc tt_whileloop;
+
             // Check for time out to exit the program
             static TicToc tt_time_out;
 
@@ -504,7 +916,7 @@ public:
 
             if (packet_buf.empty())
             {
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(1));
                 continue;
             }
 
@@ -512,7 +924,9 @@ public:
 
             /* #region STEP 1: Extract the data packet --------------------------------------------------------------*/
             
-            TicToc tt_preopt;
+            tt_preopt.Tic();
+
+            TicToc tt_extract;
 
             slict::FeatureCloud::ConstPtr packet;
             {
@@ -524,16 +938,22 @@ public:
             // Reset the time out clock
             data_time_out = tt_time_out.Toc()/1000.0;
 
+            tt_extract.Toc();
+
             /* #endregion STEP 1: Extract the data packet -----------------------------------------------------------*/
 
             /* #region STEP 2: Initialize orientation and Map -------------------------------------------------------*/
             
+            TicToc tt_init;
+
             if (!ALL_INITED)
             {
                 InitSensorData(packet);
                 if (!ALL_INITED)
                     continue;
             }
+
+            tt_init.Toc();
 
             /* #endregion STEP 2: Initialize orientation and Map ----------------------------------------------------*/
 
@@ -558,41 +978,33 @@ public:
             }
 
             // Create the container for the latest pointcloud
-            SwCloudDsk.push_back(CloudXYZITPtr(new CloudXYZIT()));
+            SwCloudDsk.push_back(CloudXYZIPtr(new CloudXYZI()));
 
             // Create the container for the downsampled deskewed pointcloud
-            SwCloudDskDS.push_back(CloudXYZITPtr(new CloudXYZIT()));
+            SwCloudDskDS.push_back(CloudXYZIPtr(new CloudXYZI()));
 
             // Buffer to store the coefficients of the lidar factors
-            SwLidarCoef.push_back(deque<LidarCoef>());
+            SwLidarCoef.push_back(vector<LidarCoef>());
 
             // Buffer to count the number of associations per voxel
             SwDepVsAssoc.push_back(map<int, int>());
 
             // Add buffer the IMU samples at the last state
             AddImuToBuff(SwTimeStep, SwImuBundle, packet, regularize_imu);
-            
-            // Check the imu distribution
-            // for(int i = 0; i < SwImuBundle.size(); i++)
-            // {
-            //     printf(KBLU "Step: %2d / %2d. Time: [%.6f, %.6f]\n" RESET, i, SwTimeStep.size(), SwTimeStep[i].front().start_time, SwTimeStep[i].back().final_time);
-
-            //     for(int j = 0; j < SwTimeStep[i].size(); j++)
-            //     {
-            //         printf(KGRN "Substep %2d / %2d. Time: [%.6f, %.6f]\n" RESET, j, N_SUB_SEG, SwTimeStep[i][j].start_time, SwTimeStep[i][j].final_time);
-
-            //         for(int k = 0; k < SwImuBundle[i][j].size(); k++)
-            //             printf(KYEL "ImuSample %2d. Time: %.6f. Dt: %.3f. GYR: %9.6f, %9.6f, %9.6f. ACC: %9.6f, %9.6f, %9.6f\n" RESET,
-            //                          k, SwImuBundle[i][j][k].t, k == 0 ? 0.0 : SwImuBundle[i][j][k].t - SwImuBundle[i][j][k-1].t,
-            //                          SwImuBundle[i][j][k].gyro(0), SwImuBundle[i][j][k].gyro(1), SwImuBundle[i][j][k].gyro(2),
-            //                          SwImuBundle[i][j][k].acce(0), SwImuBundle[i][j][k].acce(1), SwImuBundle[i][j][k].acce(2));
-            //     }
-            // }
 
             // Imu propagated states
             SwPropState.push_back(deque<ImuProp>(N_SUB_SEG));
 
-            tt_insert.Toc();
+            // Extend the spline
+            if (GlobalTraj == nullptr)
+            {
+                GlobalTraj = PoseSplinePtr(new PoseSplineX(SPLINE_N, deltaT));
+                GlobalTraj->setStartTime(SwTimeStep.front().front().start_time);
+                printf("Creating spline of order %d, dt %f s. Time: %f\n", SPLINE_N, deltaT, SwTimeStep.front().front().start_time);
+            }
+            GlobalTraj->extendKnotsTo(SwTimeStep.back().back().final_time, SE3d());
+
+            tlog.t_insert = tt_insert.Toc();
 
             /* #endregion STEP 3: Insert the data to the buffers ----------------------------------------------------*/
 
@@ -629,21 +1041,60 @@ public:
                     ssVel.back()[i+1] = sfVel.back()[i];
                 }
             }
-            
-            tt_imuprop.Toc();
+
+            tlog.t_prop.push_back(tt_imuprop.Toc());
 
             /* #endregion STEP 4: IMU Propagation on the last segments ----------------------------------------------*/
 
-            /* #region STEP 5: DESKEW the pointcloud ----------------------------------------------------------------*/
+            /* #region STEP 5: Intialize the extended part of the spline --------------------------------------------*/
+
+            TicToc tt_extspline;
             
-            // TicToc tt_deskew;
+            static int last_updated_knot = -1;
 
-            DeskewByImu(SwPropState.back(), SwTimeStep.back(),
-                        SwCloud.back(), SwCloudDsk.back(), SwCloudDskDS.back(), assoc_spacing);
+            // Initialize the spline knots by the propagation value
+            int baseKnot = GlobalTraj->computeTIndex(SwPropState.back().front().t[0]).second + 1;
+            for(int knot_idx = baseKnot; knot_idx < GlobalTraj->numKnots(); knot_idx++)
+            {
+                // Initialize by linear interpolation
+                double knot_time = GlobalTraj->getKnotTime(knot_idx);
+                // Find the propagated pose
+                for(int seg_idx = 0; seg_idx < SwPropState.size(); seg_idx++)
+                {
+                    for(int subseg_idx = 0; subseg_idx < SwPropState.back().size(); subseg_idx++)
+                    {
+                        if(SwPropState.back()[subseg_idx].t.back() < knot_time)
+                            continue;
 
-            // printf("Deskew Time Begin: %f\n", tt_deskew.Toc());
+                        GlobalTraj->setKnot(SwPropState.back()[subseg_idx].getTf(knot_time).getSE3(), knot_idx);
+                        break;
+                    }
+                }
 
-            /* #endregion STEP 5: DESKEW the pointcloud -------------------------------------------------------------*/
+                // Initialize by copying the previous control point
+                if (GlobalTraj->getKnotTime(knot_idx) >= GlobalTraj->maxTime()
+                    || GlobalTraj->getKnotTime(knot_idx) >= SwPropState.back().back().t.back())
+                {
+                    // GlobalTraj->setKnot(SwPropState.back().back().getTf(knot_time, false).getSE3(), knot_idx);
+                    GlobalTraj->setKnot(GlobalTraj->getKnot(knot_idx-1), knot_idx);
+                    continue;
+                }
+            }
+            
+            // Fit the spline at the ending segment to avoid high cost
+            std::thread threadFitSpline;
+            if (fit_spline)
+            {
+                static bool fit_spline_enabled = false;
+                if (SwTimeStep.size() >= WINDOW_SIZE && !fit_spline_enabled)
+                    fit_spline_enabled = true;
+                else if(fit_spline_enabled)
+                    threadFitSpline = std::thread(&Estimator::FitSpline, this);
+            }
+
+            tt_extspline.Toc();
+
+            /* #endregion STEP 5: Intialize the extended part of the spline -----------------------------------------*/
 
             // Loop if sliding window has not reached required length
             if (SwTimeStep.size() < WINDOW_SIZE)
@@ -661,11 +1112,8 @@ public:
                 }
             }
 
-            /* #region STEP 6: Associate scan with map --------------------------------------------------------------*/
-
-            static int last_ufomap_version = ufomap_version;
-            
             // Reset the association if ufomap has been updated
+            static int last_ufomap_version = ufomap_version;
             static bool first_round = true;
             if (ufomap_version != last_ufomap_version)
             {
@@ -675,53 +1123,175 @@ public:
                 printf(KYEL "UFOMAP RESET.\n" RESET);
             }
 
+            /* #region STEP 6: DESKEW the pointcloud ----------------------------------------------------------------*/
+            
+            string t_deskew;
+            double tt_deskew = 0;
+
             for (int i = first_round ? 0 : WINDOW_SIZE - 1; i < WINDOW_SIZE; i++)
             {
-                // TicToc tt_assoc;
+                TicToc tt;
 
-                SwDepVsAssoc[i].clear();
-                AssociateCloudWithMap(SwTimeStep[i], surfelMap, mytf(sfQua[i].back(), sfPos[i].back()),
-                                      SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], SwLidarCoef[i], SwDepVsAssoc[i]);
+                switch (deskew_method[0])
+                {
+                    case 0:
+                        DeskewByImu(SwPropState[i], SwTimeStep[i], SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], assoc_spacing);
+                        break;
+                    case 1:
+                        DeskewBySpline(*GlobalTraj, SwTimeStep[i], SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], assoc_spacing);
+                        break;
+                    default:
+                        break;
+                }
 
-                // printf("Assoc Time Begin: %f\n", tt_assoc.Toc());
+                // Check the timing
+                tt.Toc();
+                t_deskew  += myprintf("#%d: %3.1f, ", i, tt.GetLastStop());
+                tt_deskew += tt.GetLastStop();
+            }
+
+            t_deskew = myprintf("deskew: %3.1f, ", tt_deskew) + t_deskew;
+
+            tlog.t_desk.push_back(tt_deskew);
+
+            /* #endregion STEP 6: DESKEW the pointcloud -------------------------------------------------------------*/
+
+            /* #region STEP 7: Associate scan with map --------------------------------------------------------------*/
+            
+            string t_assoc;
+            double tt_assoc = 0;
+
+            for (int i = first_round ? 0 : WINDOW_SIZE - 1; i < WINDOW_SIZE; i++)
+            {
+                TicToc tt;
+
+                lock_guard<mutex> lg(map_mtx);
+                SwDepVsAssoc[i].clear(); SwLidarCoef[i].clear();
+                AssociateCloudWithMap(*activeSurfelMap, activeikdtMap, mytf(sfQua[i].back(), sfPos[i].back()),
+                                       SwCloud[i], SwCloudDskDS[i], SwLidarCoef[i], SwDepVsAssoc[i]);
+
+                // Check the timing
+                tt.Toc();
+                t_assoc  += myprintf("#%d: %3.1f, ", i, tt.GetLastStop());
+                tt_assoc += tt.GetLastStop();
             }
             
-            first_round = false;
+            t_assoc = myprintf("assoc: %3.1f, ", tt_assoc) + t_assoc;
+
+            tlog.t_assoc.push_back(tt_assoc);
+
             // find_new_node = false;
 
-            /* #endregion STEP 6: Associate scan with map -----------------------------------------------------------*/
+            /* #endregion STEP 7: Associate scan with map -----------------------------------------------------------*/
 
-            /* #region STEP 7: LIO optimizaton ----------------------------------------------------------------------*/
+            /* #region STEP 8: LIO optimizaton ----------------------------------------------------------------------*/
 
             tt_preopt.Toc();
 
             static int optNum = 0; optNum++;
-            slict::OptStat optreport[max_outer_iters];
+            vector<slict::OptStat> optreport(max_outer_iters);
             for (auto &report : optreport)
                 report.OptNum = optNum;
 
-            string printout, DVAReport;
+            // Update the time check
+            tlog.OptNum = optNum;
+            tlog.header.stamp = ros::Time(SwTimeStep.back().back().final_time);
+
+            string printout, lioop_times_report = "", DVAReport;
 
             int outer_iter = max_outer_iters;
-            while(outer_iter > 0)
+            while(true)
             {
-                slict::OptStat &report = optreport[outer_iter-1]; 
-                
+                // Decrement outer interation counter
+                outer_iter--;
+
+                // Prepare a report
+                slict::OptStat &report = optreport[outer_iter];
+
                 // Calculate the downsampling rate at each depth            
                 makeDVAReport(SwDepVsAssoc, DVA, total_lidar_coef, DVAReport);
-                lidar_ds_rate = (max_lidar_factor == -1 ? 1 : max(1, (int)std::floor((double)total_lidar_coef / max_lidar_factor)));
+                lidar_ds_rate = (max_lidar_factor == -1 ? 1 : max(1, (int)std::floor( (double)total_lidar_coef/max_lidar_factor) ));
 
-                LIOOptimization(report);
+                // if(threadFitSpline.joinable())
+                //     threadFitSpline.join();
+
+                // Create a local spline to store the new knots, isolating the poses from the global trajectory
+                PoseSplineX LocalTraj(SPLINE_N, deltaT);
+                int swBaseKnot = GlobalTraj->computeTIndex(SwImuBundle[0].front().front().t).second;
+                int swNextBase = GlobalTraj->computeTIndex(SwImuBundle[1].front().front().t).second;
+
+                static map<int, int> prev_knot_x;
+                static map<int, int> curr_knot_x;
+
+                double swStartTime = GlobalTraj->getKnotTime(swBaseKnot);
+                double swFinalTime = SwTimeStep.back().back().final_time - 1e-3; // Add a small offset to avoid localtraj having extra knots due to rounding error
+
+                LocalTraj.setStartTime(swStartTime);
+                LocalTraj.extendKnotsTo(swFinalTime, SE3d());
+
+                // Copy the knots value from global to local traj
+                for(int knot_idx = swBaseKnot; knot_idx < GlobalTraj->numKnots(); knot_idx++)
+                {
+                    if ((knot_idx - swBaseKnot) > LocalTraj.numKnots() - 1)
+                        continue;
+                    LocalTraj.setKnot(GlobalTraj->getKnot(knot_idx), knot_idx - swBaseKnot);
+                }
+
+                // Check insantity
+                ROS_ASSERT_MSG(LocalTraj.numKnots() <= GlobalTraj->numKnots() - swBaseKnot,
+                               "Knot count not matching %d, %d, %d\n",
+                               LocalTraj.numKnots(), GlobalTraj->numKnots() - swBaseKnot, swBaseKnot);
+
+                // Accounting for the knot idx for marginalization
+                curr_knot_x.clear();
+                for(int knot_idx = 0; knot_idx < LocalTraj.numKnots(); knot_idx++)
+                    curr_knot_x[knot_idx + swBaseKnot] = knot_idx;
+
+                TicToc tt_feaSel;
+                // Select the features
+                vector<ImuIdx> imuSelected;
+                vector<lidarFeaIdx> featureSelected;
+                FactorSelection(LocalTraj, imuSelected, featureSelected);
+                // Visualize the selection
+                PublishAssocCloud(featureSelected, SwLidarCoef);
+                tt_feaSel.Toc();
+
+                tlog.t_feasel.push_back(tt_feaSel.GetLastStop());
+
+                // Optimization
+                lioop_times_report = "";
+                LIOOptimization(report, lioop_times_report, LocalTraj,
+                                prev_knot_x, curr_knot_x, swNextBase, outer_iter,
+                                imuSelected, featureSelected, tlog);
+
+                // Load the knot values back to the global traj
+                for(int knot_idx = 0; knot_idx < LocalTraj.numKnots(); knot_idx++)
+                {
+                    GlobalTraj->setKnot(LocalTraj.getKnot(knot_idx), knot_idx + swBaseKnot);
+                    last_updated_knot = knot_idx + swBaseKnot;
+                }
 
                 /* #region Post optimization ------------------------------------------------------------------------*/
 
                 TicToc tt_posproc;
 
-                // Redo associate
-                outer_iter--;
+                string pstop_times_report = "pp: ";
 
-                // Backward propogate of the state
-                #pragma omp parallel for num_threads(MAX_THREADS)
+                // Break the loop early if the optimization finishes quickly.
+                bool redo_optimization = true;
+                if (outer_iter <= 0
+                    || (outer_iter <= max_outer_iters - 2
+                        && report.JK < report.J0
+                        && (report.J0 - report.JK)/report.J0 < dj_thres )
+                   )
+                    redo_optimization = false;
+
+                // int PROP_THREADS = std::min(WINDOW_SIZE, MAX_THREADS);
+                // Redo propagation
+
+                TicToc tt_prop_;
+
+                #pragma omp parallel for num_threads(WINDOW_SIZE)
                 for (int i = 0; i < WINDOW_SIZE; i++)
                 {
                     for(int j = 0; j < SwTimeStep[i].size(); j++)
@@ -738,58 +1308,70 @@ public:
                     }
                 }
 
-                // Redo the deskew
-                for(int i = 0; i < WINDOW_SIZE; i++)
-                {
-                    // TicToc tt_deskew;
-                    
-                    DeskewByImu(SwPropState[i], SwTimeStep[i], SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], assoc_spacing);
-                    
-                    // printf("Deskew Time Loop: %f\n", tt_deskew.Toc());
-                }
+                tlog.t_prop.push_back(tt_prop_.Toc());
+                pstop_times_report += myprintf("prop: %.1f, ", tlog.t_prop.back());
 
-                // Redo associations and loop if optimization iterations exceed the threshold
-                bool convergent = (report.iters < max_iterations && report.tslv/1000.0 < max_solve_time);
-                
+                TicToc tt_deskew_;
+
+                // Redo the deskew
+                if(lite_redeskew)
+                    if (redo_optimization)  // If optimization is gonna be done again, deskew with light method
+                        for (int i = first_round ? 0 : max(0, WINDOW_SIZE - reassociate_steps); i < WINDOW_SIZE; i++)
+                            Redeskew(SwPropState[i], SwTimeStep[i], SwCloud[i], SwCloudDskDS[i]);
+                    else                    // If optimization is not gonna be done again, deskew with heavy method
+                        for (int i = first_round ? 0 : max(0, WINDOW_SIZE - reassociate_steps); i < WINDOW_SIZE; i++)
+                            DeskewByImu(SwPropState[i], SwTimeStep[i], SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], assoc_spacing);
+                else
+                    for (int i = first_round ? 0 : max(0, WINDOW_SIZE - reassociate_steps); i < WINDOW_SIZE; i++)
+                        DeskewByImu(SwPropState[i], SwTimeStep[i], SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], assoc_spacing);
+
+                tlog.t_desk.push_back(tt_deskew_.Toc());
+                pstop_times_report += myprintf("dsk: %.1f, ", tlog.t_desk.back());
+
+                TicToc tt_assoc_;
+    
                 // Redo the map association
-                for (int i = 0; i < WINDOW_SIZE; i++)
+                for (int i = first_round ? 0 : max(0, WINDOW_SIZE - reassociate_steps); i < WINDOW_SIZE; i++)
                 {
                     // TicToc tt_assoc;
+                    
+                    lock_guard<mutex> lg(map_mtx);
+                    SwDepVsAssoc[i].clear(); SwLidarCoef[i].clear();
+                    AssociateCloudWithMap(*activeSurfelMap, activeikdtMap, mytf(sfQua[i].back(), sfPos[i].back()),
+                                           SwCloud[i], SwCloudDskDS[i], SwLidarCoef[i], SwDepVsAssoc[i]);
 
-                    SwDepVsAssoc[i].clear();
-                    AssociateCloudWithMap(SwTimeStep[i], surfelMap, mytf(sfQua[i].back(), sfPos[i].back()),
-                                          SwCloud[i], SwCloudDsk[i], SwCloudDskDS[i], SwLidarCoef[i], SwDepVsAssoc[i]);
-
-                    // printf("Assoc Time Loop: %f\n", tt_assoc.Toc());
+                    // printf("Assoc Time: %f\n", tt_assoc.Toc());
                 }
-                
+
+                tlog.t_assoc.push_back(tt_assoc_.Toc());
+                pstop_times_report += myprintf("assoc: %.1f, ", tlog.t_assoc.back());
+
                 tt_posproc.Toc();
 
                 /* #endregion Post optimization ---------------------------------------------------------------------*/
 
                 /* #region Write the report -------------------------------------------------------------------------*/
-                
+
                 // Update the report
-                report.header.stamp = ros::Time(SwTimeStep.back().back().final_time);
-                report.OptNumSub = outer_iter + 1;
-                report.keyfrm = KfCloudPose->size();
-                report.margPerc = margPerc;
+                report.header.stamp   = ros::Time(SwTimeStep.back().back().final_time);
+                report.OptNumSub      = outer_iter + 1;
+                report.keyfrm         = KfCloudPose->size();
+                report.margPerc       = margPerc;
                 report.fixed_knot_min = first_fixed_knot;
                 report.fixed_knot_max = last_fixed_knot;
 
-                report.tpreopt  = tt_preopt.GetLastStop();
-                report.tpostopt = tt_posproc.GetLastStop();
-                report.tlp      = tt_loop.Toc();
-
+                report.tpreopt        = tt_preopt.GetLastStop();
+                report.tpostopt       = tt_posproc.GetLastStop();
+                report.tlp            = tt_loop.Toc();
+                
                 static double last_tmapping = -1;
-                if (last_tmapping != tt_ufmupdt.GetLastStop())
+                if (last_tmapping != tt_margcloud.GetLastStop())
                 {
-                    report.tmapimg = tt_ufmupdt.GetLastStop();
-                    last_tmapping  = tt_ufmupdt.GetLastStop();
+                    report.tmapimg = tt_margcloud.GetLastStop();
+                    last_tmapping  = tt_margcloud.GetLastStop();
                 }
                 else
                     report.tmapimg = -1;
-
 
                 Vector3d eul_est = Util::Quat2YPR(Quaternd(report.Qest.w, report.Qest.x, report.Qest.y, report.Qest.z));
                 Vector3d eul_imu = Util::Quat2YPR(Quaternd(report.Qest.w, report.Qest.x, report.Qest.y, report.Qest.z));
@@ -798,42 +1380,46 @@ public:
 
                 /* #region */
                 printout +=
-                    myprintf("Op#.Oi#: %04d. %2d /%2d. Itr: %2d / %2d. tpo: %4.0f. tbc: %4.0f. tslv: %4.0f. tpp: %4.0f. tlp: %4.0f. tufm: %4.0f. tlpBa: %4.0f. "
-                             "trun: %.3f\n"
-                             "Ftr: Ldr: %5d / %5d / %5d. IMU: %5d. Vel: %2d. Buf: %2d. Kfr: %d. Marg%%: %3.0f. Kfca: %d. "
-                            //  "Knots: %d -> %d. Fixed: %d -> %d. "
+                    show_report ?
+                    myprintf("Op#.Oi#: %04d. %2d /%2d. Itr: %2d / %2d. trun: %.3f.\n"
+                             "tpo: %4.0f. tfs: %4.0f. tbc: %4.0f. tslv: %4.0f / %4.0f. tpp: %4.0f. tlp: %4.0f. tufm: %4.0f. tlpBa: %4.0f.\n"
+                             "Ftr: Ldr: %5d / %5d / %5d. IMU: %5d. Prop: %5d. Vel: %2d. Buf: %2d. Kfr: %d. Marg%%: %6.3f. Kfca: %d. "
+                             "Fixed: %d -> %d. "
                              "Map: %d\n"
-                             "J0:  %15.3f, Ldr: %15.3f. IMU: %15.3f. Vel: %9.3f.\n"
-                             "JK:  %15.3f, Ldr: %15.3f. IMU: %15.3f. Vel: %9.3f.\n"
-                            //  "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f\n"
+                             "J0:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
+                             "JK:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
+                             "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
                             //  "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f.\n"
                              "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
-                             "DVA:  %s\n"
-                             "\n",
+                             "DVA:  %s\n",
                              // Time and iterations
                              report.OptNum, report.OptNumSub, max_outer_iters,
                              report.iters, max_iterations,
-                             report.tpreopt,           // time preparing before LIOOptimization
+                             report.trun,
+                             report.tpreopt,           // time preparing before lio optimization
+                             tt_fitspline.GetLastStop(), // time to fit the spline
                              report.tbuildceres,       // time building the ceres problem before solving
                              report.tslv,              // time solving ceres problem
+                             t_slv_budget,             // time left to solve the problem
                              report.tpostopt,          // time for post processing
                              report.tlp,               // time packet was extracted up to now
                              report.tmapimg,           // time of last insertion of data to ufomap
                              tt_loopBA.GetLastStop(),  // time checking loop closure
-                             report.trun,
                              // Sliding window stats
-                             report.surfFactors, max_lidar_factor, total_lidar_coef, report.imuFactors, report.velFactors,
-                             report.mfcBuf = packet_buf.size(), report.keyfrm, report.margPerc, report.kfcand,
-                             // active_knots.begin()->first, active_knots.rbegin()->first,
-                             // report.fixed_knot_min, report.fixed_knot_max,
-                             surfelMap.size(),
+                             report.surfFactors, max_lidar_factor, total_lidar_coef,
+                             report.imuFactors, report.propFactors, report.velFactors,
+                             report.mfcBuf = packet_buf.size(), report.keyfrm, report.margPerc*100, report.kfcand,
+                            //  active_knots.begin()->first, active_knots.rbegin()->first,
+                             report.fixed_knot_min, report.fixed_knot_max,
+                             use_ufm ? activeSurfelMap->size() : activeikdtMap->size(),
                              // Optimization initial costs
-                             report.J0, report.J0Surf, report.J0Imu, report.J0Vel,
+                             report.J0, report.J0Surf, report.J0Imu, report.J0Prop, report.J0Vel,
                              // Optimization final costs
-                             report.JK, report.JKSurf, report.JKImu, report.JKVel,
-                            //  // Bias Estimate
-                            //  ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
-                            //  ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                             report.JK, report.JKSurf, report.JKImu, report.JKProp, report.JKVel,
+                             // Bias Estimate
+                             ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
+                             ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                             BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
                              // Pose Estimate from propogation
                             //  eul_imu.x(), eul_imu.y(), eul_imu.z(),
                             //  report.Pimu.x, report.Pimu.y, report.Pimu.z,
@@ -844,14 +1430,15 @@ public:
                              report.Vest.x, report.Vest.y, report.Vest.z,
                              Vest.norm(), (Vest - Vimu).norm(),
                              // Report on the assocations at different scales
-                             DVAReport.c_str());
-                /* #endregion */        
+                             DVAReport.c_str())
+                    : "\n";
+                /* #endregion */
 
                 // Attach the report from loop closure
                 /* #region */
                 printout +=
                     myprintf("%sBA# %4d. LoopEn: %d. LastFn: %6.3f. Itr: %3d. tslv: %4.0f. trbm: %4.0f. Ftr: RP: %4d. Lp: %4d.\n"
-                             "J:  %6.3f -> %6.3f. rP: %6.3f -> %6.3f. Lp: %6.3f -> %6.3f\n\n" RESET,
+                             "J:  %6.3f -> %6.3f. rP: %6.3f -> %6.3f. Lp: %6.3f -> %6.3f\n" RESET,
                              // Stats
                              baReport.turn % 2 == 0 ? KBLU : KGRN, baReport.turn, loop_en, lastICPFn,
                              baReport.pgopt_iter, baReport.pgopt_time, baReport.rebuildmap_time,
@@ -860,7 +1447,22 @@ public:
                              baReport.J0, baReport.JK,
                              baReport.J0_relpose, baReport.JK_relpose,
                              baReport.J0_loop, baReport.JK_loop);
-                /* #endregion */        
+
+                // Show the preop times
+                string preop_times_report = "";
+                if (GetBoolParam("/show_preop_times", false))
+                {
+                    preop_times_report += "Preop: ";
+                    preop_times_report += myprintf("insert:  %3.1f, ", tt_insert.GetLastStop());
+                    preop_times_report += myprintf("imuprop: %3.1f, ", tt_imuprop.GetLastStop());
+                    preop_times_report += myprintf("extspln: %3.1f, ", tt_extspline.GetLastStop());
+                    preop_times_report += t_deskew; 
+                    preop_times_report += t_assoc;
+                    preop_times_report += myprintf("feaSel: %3.1f, ", tt_feaSel.GetLastStop());
+                }
+                printout += preop_times_report + pstop_times_report + "\n";
+                printout += lioop_times_report + "\n";
+                /* #endregion */
 
                 // Publish the optimization results
                 static ros::Publisher opt_stat_pub = nh_ptr->advertise<slict::OptStat>("/opt_stat", 1);
@@ -868,18 +1470,22 @@ public:
 
                 /* #endregion Write the report ----------------------------------------------------------------------*/
 
-                // Break the loop early if the optimization finishes quickly.
-                if (convergent)
+                if(!redo_optimization)
+                {
+                    prev_knot_x = curr_knot_x;
                     break;
+                }
             }
 
-            /* #endregion STEP 7: LIO optimizaton -------------------------------------------------------------------*/
+            first_round = false;
 
-            /* #region STEP 8: Recruit Keyframe ---------------------------------------------------------------------*/
+            /* #endregion STEP 8: LIO optimizaton -------------------------------------------------------------------*/
 
+            /* #region STEP 9: Recruit Keyframe ---------------------------------------------------------------------*/
+            
             NominateKeyframe();
 
-            /* #endregion STEP 8: Recruit Keyframe ------------------------------------------------------------------*/
+            /* #endregion STEP 9: Recruit Keyframe ------------------------------------------------------------------*/
 
             /* #region STEP 9: Loop Closure and BA ------------------------------------------------------------------*/
 
@@ -894,25 +1500,55 @@ public:
             tt_loopBA.Toc();
 
             /* #endregion STEP 9: Loop Closure and BA ---------------------------------------------------------------*/
-            
-            /* #region STEP 10: Report and Vizualize ----------------------------------------------------------------*/ 
+
+            /* #region STEP 11: Report and Vizualize ----------------------------------------------------------------*/ 
             
             // Export the summaries
-            cout << printout;
+            if (show_report)
+                cout << printout;
+
+            // std::thread vizSwTrajThread(&Estimator::VisualizeSwTraj, this);            
+            // std::thread vizSwLoopThread(&Estimator::VisualizeLoop, this);
+            
+            // vizSwTrajThread.join();
+            // vizSwLoopThread.join();
 
             VisualizeSwTraj();
-
             VisualizeLoop();
 
-            /* #endregion STEP 10: Report and Vizualize -------------------------------------------------------------*/ 
+            /* #endregion STEP 11: Report and Vizualize -------------------------------------------------------------*/ 
 
-            /* #region STEP 11: Slide window forward ----------------------------------------------------------------*/
+            /* #region STEP 12: Slide window forward ----------------------------------------------------------------*/
 
             // Slide the window forward
             SlideWindowForward();
 
-            /* #endregion STEP 11: Slide window forward -------------------------------------------------------------*/
+            /* #endregion STEP 12: Slide window forward -------------------------------------------------------------*/
+
+            // Publish the loop time
+            tlog.t_loop = tt_whileloop.Toc();
+            static ros::Publisher tlog_pub = nh_ptr->advertise<slict::TimeLog>("/time_log", 100);
+            tlog_pub.publish(tlog);
         }
+    }
+
+    void PublishAssocCloud(vector<lidarFeaIdx> &featureSelected, deque<vector<LidarCoef>> &SwLidarCoef)
+    {
+        static CloudXYZIPtr assocCloud(new CloudXYZI());
+        assocCloud->resize(featureSelected.size());
+
+        #pragma omp parallel for num_threads(MAX_THREADS)
+        for (int i = 0; i < featureSelected.size(); i++)
+        {
+            LidarCoef &coef = SwLidarCoef[featureSelected[i].wdidx][featureSelected[i].pointidx];
+            assocCloud->points[i].x = coef.finW(0);
+            assocCloud->points[i].y = coef.finW(1);
+            assocCloud->points[i].z = coef.finW(2);
+            assocCloud->points[i].intensity = featureSelected[i].wdidx;
+        }
+
+        static ros::Publisher assoc_cloud_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/assoc_cloud", 100);
+        Util::publishCloud(assoc_cloud_pub, *assocCloud, ros::Time(SwTimeStep.back().back().final_time), current_ref_frame);
     }
 
     void InitSensorData(slict::FeatureCloud::ConstPtr &packet)
@@ -959,6 +1595,8 @@ public:
                     acc_avr += acc_sample;
 
                 acc_avr /= acc_buf.size();
+
+                ACC_SCALE = GRAV.norm()/acc_avr.norm();
                 
                 Quaternd q_init(Util::grav2Rot(acc_avr));
                 Vector3d ypr = Util::Quat2YPR(q_init);
@@ -978,26 +1616,39 @@ public:
     
         if (!LIDAR_INITED)
         {
-            static CloudXYZITPtr kfCloud0(new CloudXYZIT());
-            
-            // CloudXYZIT temp;
-            pcl::fromROSMsg(packet->extracted_cloud, *kfCloud0);
-
-            // *kfCloud0 += temp;
+            static CloudXYZITPtr kfCloud0_(new CloudXYZIT());
+            pcl::fromROSMsg(packet->extracted_cloud, *kfCloud0_);
 
             if(IMU_INITED)
             {   
                 // Downsample the cached kf data
                 pcl::UniformSampling<PointXYZIT> downsampler;
                 downsampler.setRadiusSearch(leaf_size);
-                downsampler.setInputCloud(kfCloud0);
-                downsampler.filter(*kfCloud0);
+                downsampler.setInputCloud(kfCloud0_);
+                downsampler.filter(*kfCloud0_);
+
+                // Admitting only latest 0.09s part of the pointcloud
+                printf("PointTime: %f -> %f\n", kfCloud0_->points.front().t, kfCloud0_->points.back().t);
+                CloudXYZIPtr kfCloud0(new CloudXYZI());
+                for(PointXYZIT &p : kfCloud0_->points)
+                {
+                    if(p.t > kfCloud0_->points.back().t - 0.09)
+                    {
+                        PointXYZI pnew;
+                        pnew.x = p.x; pnew.y = p.y; pnew.z = p.z; pnew.intensity = p.intensity;
+                        kfCloud0->push_back(pnew);   
+                    }
+                }
+
+                // Key frame cloud in world
+                CloudXYZIPtr kfCloud0InW(new CloudXYZI());
+                pcl::transformPointCloud(*kfCloud0, *kfCloud0InW, Vector3d(0, 0, 0), sfQua[0].back());
 
                 // Admit the pointcloud to buffer
-                AdmitKeyframe(packet->header.stamp.toSec(), sfQua[0].back(), Vector3d(0, 0, 0), kfCloud0, kfCloud0);
+                AdmitKeyframe(packet->header.stamp.toSec(), sfQua[0].back(), Vector3d(0, 0, 0), kfCloud0, kfCloud0InW);
 
                 // Write the file for quick visualization
-                PCDWriter writer; writer.writeASCII(log_dir + "/KfCloudPose.pcd", *KfCloudPose, 18);
+                PCDWriter writer; writer.writeASCII<PointPose>(log_dir + "/KfCloudPose.pcd", *KfCloudPose, 18);
 
                 LIDAR_INITED = true;
             }
@@ -1016,7 +1667,7 @@ public:
         double start_time, final_time, sub_timestep;
         if (timeStepDeque.size() == 1)
         {
-            start_time = packet->scanEndTime - 0.1;
+            start_time = packet->scanStartTime;
             final_time = packet->scanEndTime;
             sub_timestep = (final_time - start_time)/N_SUB_SEG;
         }
@@ -1080,7 +1731,9 @@ public:
                                                       imu.angular_velocity.z),
                                              Vector3d(imu.linear_acceleration.x,
                                                       imu.linear_acceleration.y,
-                                                      imu.linear_acceleration.z)));
+                                                      imu.linear_acceleration.z)
+                                                      *ACC_SCALE
+                                            ));
         }
 
         if (regularize_timestamp)
@@ -1098,15 +1751,17 @@ public:
         }
     }
 
-    void DeskewByImu(deque<ImuProp> &imuProp, deque<TimeSegment> timeSeg,
-                     CloudXYZITPtr &inCloud, CloudXYZITPtr &outCloud, CloudXYZITPtr &outCloudDS, double ds_rate)
+    // Complete deskew with downsample
+    void DeskewByImu(const deque<ImuProp> &imuProp, const deque<TimeSegment> timeSeg,
+                     const CloudXYZITPtr &inCloud, CloudXYZIPtr &outCloud, CloudXYZIPtr &outCloudDS,
+                     double ds_radius)
     {
         if (!fuse_imu)
         {
-            *outCloud = *inCloud;
+            *outCloud = toCloudXYZI(*inCloud);
             
-            pcl::UniformSampling<PointXYZIT> downsampler;
-            downsampler.setRadiusSearch(ds_rate);
+            pcl::UniformSampling<PointXYZI> downsampler;
+            downsampler.setRadiusSearch(ds_radius);
             downsampler.setInputCloud(outCloud);
             downsampler.filter(*outCloudDS);
 
@@ -1117,15 +1772,15 @@ public:
         outCloud->resize(cloud_size);
         outCloudDS->resize(cloud_size);
 
-        double &start_time = timeSeg.front().start_time;
-        double &final_time = timeSeg.back().final_time;
+        const double &start_time = timeSeg.front().start_time;
+        const double &final_time = timeSeg.back().final_time;
         
         #pragma omp parallel for num_threads(MAX_THREADS)
         for (int i = 0; i < cloud_size; i++)
         {
             auto &inPoint = inCloud->points[i];
 
-            double ts = inPoint.t + start_time;
+            double ts = inPoint.t;
             
             // Find the corresponding subsegment
             int seg_idx = -1;
@@ -1136,17 +1791,17 @@ public:
                     seg_idx = j;
                     break;
                 }
-                else if (timeSeg[j].start_time - 0.001 <= ts && ts < timeSeg[j].start_time)
+                else if (timeSeg[j].start_time - 1.0e-6 <= ts && ts < timeSeg[j].start_time)
                 {
                     ts = timeSeg[j].start_time;
-                    inPoint.t = ts - start_time;
+                    inPoint.t = start_time;
                     seg_idx = j;
                     break;
                 }
-                else if (timeSeg[j].final_time < ts && ts <= timeSeg[j].final_time + 0.001)
+                else if (timeSeg[j].final_time < ts && ts <= timeSeg[j].final_time - 1.0e-6)
                 {
                     ts = timeSeg[j].final_time;
-                    inPoint.t = ts - start_time;
+                    inPoint.t = final_time;
                     seg_idx = j;
                     break;
                 }
@@ -1157,7 +1812,7 @@ public:
                 printf(KYEL "Point time %f not in segment: [%f, %f]. Discarding\n" RESET, ts, start_time, final_time);
                 outCloud->points[i].x = 0; outCloud->points[i].y = 0; outCloud->points[i].z = 0;
                 outCloud->points[i].intensity = 0;
-                outCloud->points[i].t = -1; // Mark this point is invalid
+                // outCloud->points[i].t = -1; // Mark this point as invalid
                 continue;
             }
 
@@ -1170,455 +1825,1047 @@ public:
             outCloud->points[i].y = point_at_end_time.y();
             outCloud->points[i].z = point_at_end_time.z();
             outCloud->points[i].intensity = inPoint.intensity;
-            outCloud->points[i].t = inPoint.t;
+            // outCloud->points[i].t = inPoint.t;
 
             outCloudDS->points[i] = outCloud->points[i];
             outCloudDS->points[i].intensity = i;
         }
 
-        pcl::UniformSampling<PointXYZIT> downsampler;
-        CloudXYZITPtr tempDSCloud(new CloudXYZIT);
-        downsampler.setRadiusSearch(ds_rate);
-        downsampler.setInputCloud(outCloudDS);
-        downsampler.filter(*tempDSCloud);
-
-        // If downsampled pointcloud has too few points, relax the ds_rate
-        int ds_sized = tempDSCloud->size();
-        if(ds_sized < 2*max_lidar_factor/WINDOW_SIZE)
+        // Downsample the pointcloud
+        static int step_time;
+        static int step_scale;
+        // Reset the scale if the time has elapsed
+        if (step_time == -1 || timeSeg.front().start_time - step_time > 5.0)
         {
-            downsampler.setRadiusSearch(0.1);
-            downsampler.setInputCloud(outCloudDS);
-            downsampler.filter(*outCloudDS);
-
-            // printf(KYEL "Too few points after downsampling. Relaxing assoc_spacing to 0.2. Points: %d -> %d" RESET,
-            //              ds_sized, outCloudDS->size());
+            step_time = timeSeg.front().start_time;
+            step_scale = 0;
         }
-        else
-            outCloudDS = tempDSCloud;
+
+        if (ds_radius > 0.0)
+        {
+            int ds_scale = step_scale;
+            CloudXYZIPtr tempDSCloud(new CloudXYZI);
+            pcl::UniformSampling<PointXYZI> downsampler;
+            downsampler.setInputCloud(outCloudDS);
+            
+            while(true)
+            {
+                double ds_effective_radius = ds_radius/(std::pow(2, ds_scale));
+
+                downsampler.setRadiusSearch(ds_effective_radius);
+                downsampler.setInputCloud(outCloudDS);
+                downsampler.filter(*tempDSCloud);
+
+                // If downsampled pointcloud has too few points, relax the ds_radius
+                if(tempDSCloud->size() >= 2*max_lidar_factor/WINDOW_SIZE
+                    || tempDSCloud->size() == outCloudDS->size()
+                    || ds_effective_radius < leaf_size)
+                {
+                    outCloudDS = tempDSCloud;
+                    break;
+                }
+                else
+                {
+                    printf(KYEL "Effective assoc_spacing: %f. Points: %d -> %d. Too few points. Relaxing assoc_spacing...\n" RESET,
+                                 ds_effective_radius, outCloudDS->size(), tempDSCloud->size());
+                    ds_scale++;
+                    continue;
+                }
+            }
+            
+            if (ds_scale != step_scale)
+            {
+                step_scale = ds_scale;
+                step_time = timeSeg.front().start_time;
+            }
+        }
     }
 
-    void LIOOptimization(slict::OptStat &report)
+    // Only deskew the associated set
+    void Redeskew(const deque<ImuProp> &imuProp, const deque<TimeSegment> timeSeg,
+                  const CloudXYZITPtr  &inCloud, CloudXYZIPtr &outCloudDS)
     {
-        TicToc tt_buildceres;
+        const double &start_time = timeSeg.front().start_time;
+        const double &final_time = timeSeg.back().final_time;
+      
+        int cloud_size = outCloudDS->size();
+        #pragma omp parallel for num_threads(MAX_THREADS)
+        for (int i = 0; i < cloud_size; i++)
+        {
+            int point_idx = (int)(outCloudDS->points[i].intensity);
+
+            PointXYZIT &pointRaw = inCloud->points[point_idx];
+            double ts = pointRaw.t;
+            if (ts < 0)
+                continue;
+            
+            // Find the corresponding subsegment
+            int seg_idx = -1;
+            for(int j = 0; j < timeSeg.size(); j++)
+            {
+                if(timeSeg[j].start_time <= ts && ts <= timeSeg[j].final_time)
+                {
+                    seg_idx = j;
+                    break;
+                }
+                else if (timeSeg[j].start_time - 1.0e-6 <= ts && ts < timeSeg[j].start_time)
+                {
+                    ts = timeSeg[j].start_time;
+                    // coef.t_ = start_time;
+                    seg_idx = j;
+                    break;
+                }
+                else if (timeSeg[j].final_time < ts && ts <= timeSeg[j].final_time - 1.0e-6)
+                {
+                    ts = timeSeg[j].final_time;
+                    // coef.t_ = final_time;
+                    seg_idx = j;
+                    break;
+                }
+            }
+
+            if(seg_idx == -1)
+            {
+                printf(KYEL "Point time %f not in segment: [%f, %f]. Discarding\n" RESET, ts, start_time, final_time);
+                outCloudDS->points[i].x = 0; outCloudDS->points[i].y = 0; outCloudDS->points[i].z = 0;
+                outCloudDS->points[i].intensity = 0;
+                // outCloud->points[i].t = -1; // Mark this point as invalid
+                continue;
+            }
+
+            // Transform all points to the end of the scan
+            myTf T_Bk_Bs = imuProp.back().getBackTf().inverse()*imuProp[seg_idx].getTf(ts);
+
+            Vector3d point_at_end_time = T_Bk_Bs.rot * Vector3d(pointRaw.x, pointRaw.y, pointRaw.z) + T_Bk_Bs.pos;
+
+            outCloudDS->points[i].x = point_at_end_time.x();
+            outCloudDS->points[i].y = point_at_end_time.y();
+            outCloudDS->points[i].z = point_at_end_time.z();
+            // outCloud->points[i].intensity = inPoint.intensity;
+            // outCloud->points[i].t = inPoint.t;
+
+            // outCloudDS->points[i] = outCloud->points[i];
+            // outCloudDS->points[i].intensity = i;
+        }
+    }
+
+    void DeskewBySpline(PoseSplineX &traj, const deque<TimeSegment> timeSeg,
+                        const CloudXYZITPtr &inCloud, CloudXYZIPtr &outCloud, CloudXYZIPtr &outCloudDS,
+                        double ds_radius)
+    {
+        if (!fuse_imu)
+        {
+            *outCloud = toCloudXYZI(*inCloud);
+            
+            pcl::UniformSampling<PointXYZI> downsampler;
+            downsampler.setRadiusSearch(ds_radius);
+            downsampler.setInputCloud(outCloud);
+            downsampler.filter(*outCloudDS);
+
+            return;
+        }
+
+        int cloud_size = inCloud->size();
+        outCloud->resize(cloud_size);
+        outCloudDS->resize(cloud_size);
+
+        const double &start_time = timeSeg.front().start_time;
+        const double &final_time = timeSeg.back().final_time;
+
+        #pragma omp parallel for num_threads(MAX_THREADS)
+        for (int i = 0; i < cloud_size; i++)
+        {
+            auto &inPoint = inCloud->points[i];
+
+            double ts = inPoint.t;
+
+            if(!TimeIsValid(traj, ts, 1e-6))
+            {
+                printf(KYEL "Point time %f not in segment: [%f, %f]. Discarding\n" RESET, ts, start_time, final_time);
+                outCloud->points[i].x = 0; outCloud->points[i].y = 0; outCloud->points[i].z = 0;
+                outCloud->points[i].intensity = 0;
+                // outCloud->points[i].t = -1; // Mark this point as invalid
+                continue;
+            }
+
+            // Transform all points to the end of the scan
+            SE3d pose_Bk_Bs = traj.pose(final_time).inverse()*traj.pose(ts);
+            myTf T_Bk_Bs(pose_Bk_Bs.so3().unit_quaternion(), pose_Bk_Bs.translation());
+
+            Vector3d point_at_end_time = T_Bk_Bs.rot * Vector3d(inPoint.x, inPoint.y, inPoint.z) + T_Bk_Bs.pos;
+
+            outCloud->points[i].x = point_at_end_time.x();
+            outCloud->points[i].y = point_at_end_time.y();
+            outCloud->points[i].z = point_at_end_time.z();
+            outCloud->points[i].intensity = inPoint.intensity;
+            // outCloud->points[i].t = inPoint.t;
+
+            outCloudDS->points[i] = outCloud->points[i];
+            // outCloudDS->points[i].intensity = i;
+        }
+
+        if (ds_radius > 0.0)
+        {
+            int ds_scale = 0;
+            CloudXYZIPtr tempDSCloud(new CloudXYZI);
+            pcl::UniformSampling<PointXYZI> downsampler;
+            downsampler.setInputCloud(outCloudDS);
+            
+            while(true)
+            {
+                double ds_effective_radius = ds_radius/(std::pow(2, ds_scale));
+
+                downsampler.setRadiusSearch(ds_effective_radius);
+                downsampler.setInputCloud(outCloudDS);
+                downsampler.filter(*tempDSCloud);
+
+                // If downsampled pointcloud has too few points, relax the ds_radius
+                if(tempDSCloud->size() >= 2*max_lidar_factor/WINDOW_SIZE
+                    || tempDSCloud->size() == outCloudDS->size()
+                    || ds_effective_radius < leaf_size)
+                {
+                    outCloudDS = tempDSCloud;
+                    break;
+                }
+                else
+                {
+                    printf(KYEL "Effective assoc_spacing: %f. Points: %d -> %d. Too few points. Relaxing assoc_spacing...\n" RESET,
+                                 ds_effective_radius, tempDSCloud->size(), outCloudDS->size());
+                    ds_scale++;
+                    continue;
+                }
+            }
+        }
+    }
+
+    void FitSpline()
+    {
+        tt_fitspline.Tic();
+
+        // Create a local spline to store the new knots, isolating the poses from the global trajectory
+        PoseSplineX SwTraj(SPLINE_N, deltaT);
+        int swBaseKnot = GlobalTraj->computeTIndex(SwTimeStep.front().front().start_time).second;
+
+        double swStartTime = GlobalTraj->getKnotTime(swBaseKnot);
+        double swFinalTime = SwTimeStep.back().back().final_time;
+
+        SwTraj.setStartTime(swStartTime);
+        SwTraj.extendKnotsTo(swFinalTime, SE3d());
+
+        // Copy the knots value
+        for(int knot_idx = swBaseKnot; knot_idx < GlobalTraj->numKnots(); knot_idx++)
+            SwTraj.setKnot(GlobalTraj->getKnot(knot_idx), knot_idx - swBaseKnot);
+
+        PoseSplineX &traj = SwTraj;
 
         // Create and solve the Ceres Problem
         ceres::Problem problem;
         ceres::Solver::Options options;
 
         // Set up the options
-        // options.minimizer_type = ceres::TRUST_REGION;
-        options.linear_solver_type = ceres::SPARSE_SCHUR;
-        options.trust_region_strategy_type = trustRegType;
+        options.linear_solver_type                = linSolver;
+        options.trust_region_strategy_type        = trustRegType;
         options.dense_linear_algebra_library_type = linAlgbLib;
-        options.max_num_iterations = max_iterations;
-        options.max_solver_time_in_seconds = max_solve_time;
-        options.num_threads = MAX_THREADS;
-        options.minimizer_progress_to_stdout = false;
+        options.max_num_iterations                = max_iterations;
+        options.max_solver_time_in_seconds        = max_solve_time;
+        options.num_threads                       = MAX_THREADS;
+        options.minimizer_progress_to_stdout      = false;
 
-        // Create optimization params
-        map<double, double*> PARAM_POSE;
-        map<double, double*> PARAM_VELO;
-        map<double, double*> PARAM_BIAS;
+        ceres::LocalParameterization *local_parameterization = new LieAnalyticLocalParameterization<SO3d>();
 
-        // State ID, to be used to match the state estimates with the time instances on the sliding window
-        struct StateID
+        // Number of knots of the spline
+        int KNOTS = traj.numKnots();
+
+        // Add the parameter blocks for rotational knots
+        for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
+            problem.AddParameterBlock(traj.getKnotSO3(knot_idx).data(), 4, local_parameterization);
+
+        // Add the parameter blocks for positional knots
+        for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
+            problem.AddParameterBlock(traj.getKnotPos(knot_idx).data(), 3);
+
+        // Add the parameters for imu biases
+        double *BIAS_G = new double[3];
+        double *BIAS_A = new double[3];
+
+        BIAS_G[0] = sfBig.back().back().x(); BIAS_A[0] = sfBia.back().back().x();
+        BIAS_G[1] = sfBig.back().back().y(); BIAS_A[1] = sfBia.back().back().y();
+        BIAS_G[2] = sfBig.back().back().z(); BIAS_A[2] = sfBia.back().back().z();
+
+        problem.AddParameterBlock(BIAS_G, 3);
+        problem.AddParameterBlock(BIAS_A, 3);
+
+        for(int i = 0; i < 3; i++)
         {
-            ~StateID() {};
-
-            StateID()
+            if(BG_BOUND(i) > 0)
             {
-                step_idx = 0; segm_idx = 0; state_idx = -1; end_type  =  0;
-            };
-
-            StateID(int &step_idx_, int &segm_idx_, int state_idx_, int end_type_)
-                : step_idx(step_idx_), segm_idx(segm_idx_), state_idx(state_idx_), end_type(end_type_) {};
-
-            int step_idx;   // Time step that the state belongs to
-            int segm_idx;   // Time segment in the step that the state belongs to
-            int state_idx;  // Index of the state
-            int end_type;   // The end of the seg: '0' for start, '1' for final.
-                            // Only the first should stateID should be 0
-        };
-        map<double, StateID> timeToIdx;
-        map<double, double> timeStartToFinal;
-
-        struct Loader
-        {
-            void CopyStateToParam(Vector3d &p_, Quaternd &q_, Vector3d &v_,
-                                  Vector3d &ba, Vector3d &bg,
-                                  double *&pose, double *&velo, double *&bias)
-            {
-                pose[0] = p_.x(); pose[1] = p_.y(); pose[2] = p_.z();
-                pose[3] = q_.x(); pose[4] = q_.y(); pose[5] = q_.z(); pose[6] = q_.w();
-
-                velo[0] = v_.x(); velo[1] = v_.y(); velo[2] = v_.z();
-                
-                bias[0] = ba.x(); bias[1] = ba.y(); bias[2] = ba.z();
-                bias[3] = bg.x(); bias[4] = bg.y(); bias[5] = bg.z();
+                problem.SetParameterLowerBound(BIAS_G, i, -BG_BOUND(i));
+                problem.SetParameterUpperBound(BIAS_G, i,  BG_BOUND(i));
             }
 
-            void CopyParamToState(double *&pose, double *&velo, double *&bias,
-                                  Vector3d &p_, Quaternd &q_, Vector3d &v_,
-                                  Vector3d &ba, Vector3d &bg)
+            if(BA_BOUND(i) > 0)
             {
-                p_.x() = pose[0]; p_.y() = pose[1]; p_.z() = pose[2];
-                q_.x() = pose[3]; q_.y() = pose[4]; q_.z() = pose[5]; q_.w() = pose[6];
-
-                v_.x() = velo[0]; v_.y() = velo[1]; v_.z() = velo[2];
-
-                ba.x() = bias[0]; ba.y() = bias[1]; ba.z() = bias[2];
-                bg.x() = bias[3]; bg.y() = bias[4]; bg.z() = bias[5];
-            }
-
-        } loader;
-
-        // Load values from state to params
-        for(int i = 0; i < WINDOW_SIZE; i++)
-        {
-            for(int j = 0; j < SwTimeStep[i].size(); j++)
-            {
-                // Add the start time of the first segment in the first step
-                if (i == 0 && j == 0)
-                {
-                    double timeInstance = SwTimeStep[i][j].start_time;
-                    timeToIdx[timeInstance] = StateID(i, j, PARAM_POSE.size(), 0);
-
-                    // Intialize the pose states
-                    PARAM_POSE[timeInstance] = new double[7];
-                    PARAM_VELO[timeInstance] = new double[3];
-                    PARAM_BIAS[timeInstance] = new double[6];
-
-                    loader.CopyStateToParam(ssPos[i][j], ssQua[i][j], ssVel[i][j], ssBia[i][j], ssBig[i][j],
-                                            PARAM_POSE[timeInstance], PARAM_VELO[timeInstance], PARAM_BIAS[timeInstance]);
-                }
-
-                // Add the end time of each segment
-                double timeInstance = SwTimeStep[i][j].final_time;
-                timeToIdx[timeInstance] = StateID(i, j, PARAM_POSE.size(), 1);
-                timeStartToFinal[SwTimeStep[i][j].start_time] = SwTimeStep[i][j].final_time;
-
-                // Intialize the pose states
-                PARAM_POSE[timeInstance] = new double[7];
-                PARAM_VELO[timeInstance] = new double[3];
-                PARAM_BIAS[timeInstance] = new double[6];
-                
-                loader.CopyStateToParam(sfPos[i][j], sfQua[i][j], sfVel[i][j], sfBia[i][j], sfBig[i][j],
-                                        PARAM_POSE[timeInstance], PARAM_VELO[timeInstance], PARAM_BIAS[timeInstance]);
+                problem.SetParameterLowerBound(BIAS_A, i, -BA_BOUND(i));
+                problem.SetParameterUpperBound(BIAS_A, i,  BA_BOUND(i));
             }
         }
 
-        // Add the parameter blocks
-        for(auto &state_idx : timeToIdx)
+        for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
         {
-            double timeInstace = state_idx.first;
-            
-            problem.AddParameterBlock(PARAM_POSE[timeInstace], 7, new PoseLocalParameterization());
-            problem.AddParameterBlock(PARAM_VELO[timeInstace], 3);
-            problem.AddParameterBlock(PARAM_BIAS[timeInstace], 6);
-
-            problem.SetParameterLowerBound(PARAM_BIAS[timeInstace], 0, -0.1);
-            problem.SetParameterUpperBound(PARAM_BIAS[timeInstace], 0,  0.1);
-
-            problem.SetParameterLowerBound(PARAM_BIAS[timeInstace], 1, -0.1);
-            problem.SetParameterUpperBound(PARAM_BIAS[timeInstace], 1,  0.1);
-
-            problem.SetParameterLowerBound(PARAM_BIAS[timeInstace], 2, -0.1);
-            problem.SetParameterUpperBound(PARAM_BIAS[timeInstace], 2,  0.1);
+            if (traj.getKnotTime(knot_idx) <= SwTimeStep.rbegin()[1].back().final_time)
+            {
+                problem.SetParameterBlockConstant(traj.getKnotSO3(knot_idx).data());
+                problem.SetParameterBlockConstant(traj.getKnotPos(knot_idx).data());
+            }
         }
 
-        // problem.SetParameterBlockConstant(PARAM_POSE[SwTimeStep.front().front().start_time]);
-
-        // Cloud to show points being associated
-        CloudXYZITPtr assocCloud(new CloudXYZIT());
-
-        map<double, int> timeVsFactor;
-        // Add the lidar factors
-        vector<ceres::internal::ResidualBlock *> res_ids_surf;
-        double cost_surf_init = -1, cost_surf_final = -1;
-        if(fuse_lidar)
+        // Fit the spline with pose and IMU measurements
+        vector<ceres::internal::ResidualBlock *> res_ids_poseprop;
+        for(int i = WINDOW_SIZE-1; i < WINDOW_SIZE; i++)
         {
-            static int skip = -1;
-            for (int i = 0; i < WINDOW_SIZE; i++)
+            for(int j = 0; j < SwPropState[i].size(); j++)
             {
-                for (auto &point : SwCloudDskDS[i]->points)
+                for (int k = 0; k < SwPropState[i][j].size()-1; k++)
                 {
-                    int idx = (int)(point.intensity);
-                    
-                    ROS_ASSERT(idx == SwLidarCoef[i][idx*surfel_query_depth].ptIdx);
+                    double sample_time = SwPropState[i][j].t[k];
 
-                    for(int depth = 0; depth < surfel_query_depth; depth++)
-                    {
-                        LidarCoef &coef = SwLidarCoef[i][idx*surfel_query_depth + depth];
+                    // Continue if sample is out of the window
+                    if (!traj.TimeIsValid(sample_time, 1e-6))
+                        continue;
 
-                        if (coef.t < 0 || coef.u < 0)
-                            continue;
-                        
-                        skip++;
-                        if (skip % lidar_ds_rate != 0)
-                            continue;
+                    auto   us = traj.computeTIndex(sample_time);
+                    double u  = us.first;
+                    int    s  = us.second;
 
-                        ceres::LossFunction *lidar_loss_function = lidar_loss_thres < 0 ? NULL : new ceres::HuberLoss(lidar_loss_thres);
+                    // Pose
+                    ceres::CostFunction *cost_function
+                        = new PoseAnalyticFactor
+                                (myTf(SwPropState[i][j].Q[k], SwPropState[i][j].P[k]).getSE3(), POSE_N, POSE_N, SPLINE_N, traj.getDt(), u);
 
-                        double tss = coef.u;
-                        double tsf = timeStartToFinal[tss];
+                    // Find the coupled poses
+                    vector<double *> factor_param_blocks;
+                    for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                        factor_param_blocks.emplace_back(traj.getKnotSO3(knot_idx).data());
 
-                        ROS_ASSERT(timeToIdx.find(tss) != timeToIdx.end());
-                        ROS_ASSERT(timeToIdx.find(tsf) != timeToIdx.end());
-                        ROS_ASSERT(tss != tsf);
+                    for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                        factor_param_blocks.emplace_back(traj.getKnotPos(knot_idx).data());
 
-                        Point2PlaneDisFactorCT *f = new Point2PlaneDisFactorCT(coef.f, coef.n, coef.s, coef.dt, lidar_weight);
-                        ceres::internal::ResidualBlock *res_id
-                            = problem.AddResidualBlock(f, lidar_loss_function, PARAM_POSE[tss], PARAM_POSE[tsf]);
-                        res_ids_surf.push_back(res_id);
-
-                        PointXYZIT point; point.x = coef.finW.x(); point.y = coef.finW.y(); point.z = coef.finW.z();
-                        assocCloud->push_back(point);
-
-                        timeVsFactor[tsf] += 1;
-                    }
+                    auto res_block = problem.AddResidualBlock(cost_function, NULL, factor_param_blocks);
+                    res_ids_poseprop.push_back(res_block);
                 }
             }
         }
 
-        // for(auto &time : timeVsFactor)
-        // {
-        //     int step  = timeToIdx[time.first].step_idx;
-        //     int segm  = timeToIdx[time.first].segm_idx;
-        //     int count = time.second;
-        
-        //     printf("Step %2d Seg %2d Time %f Count %3d\n", step, segm, time.first, count);
-        // }
-
-        // Create and add the new preintegration factors
+        // Add the IMU
         vector<ceres::internal::ResidualBlock *> res_ids_pimu;
-        double cost_pimu_init = -1, cost_pimu_final = -1;
-        deque<deque<PreintBase *>> local_preints(WINDOW_SIZE, deque<PreintBase *>(N_SUB_SEG));
-        if(fuse_imu)
+        for(int i = WINDOW_SIZE-1; i < WINDOW_SIZE; i++)
         {
-            // Create the preint factors
-            #pragma omp parallel for num_threads(WINDOW_SIZE)
-            for(int i = 0; i < WINDOW_SIZE; i++)
+            for(int j = 0; j < N_SUB_SEG; j++)
             {
-                #pragma omp parallel for num_threads(N_SUB_SEG)
-                for(int j = 0; j < N_SUB_SEG; j++)
+                for(int k = 1; k < SwImuBundle[i][j].size(); k++)
                 {
-                    if (SwImuBundle[i][j].size() < 3)
-                    {
-                        printf(KRED "Degenerate IMU sequence %d.%d. Size: %d, Time seg: [%.6f, %.6f]. CloudSize: %d.\n" RESET,
-                               i, j, SwImuBundle[i][j].size(), SwTimeStep[i][j].start_time, SwTimeStep[i][j].final_time, SwCloud[i]->size());
+                    double sample_time = SwImuBundle[i][j][k].t;
+
+                    // Skip if sample time exceeds the bound
+                    if (!traj.TimeIsValid(sample_time, 1e-6))
                         continue;
-                    }
 
-                    double tss = SwImuBundle[i][j][0].u;
-                    double tsf = timeStartToFinal[tss];
+                    auto imuBias = ImuBias(Vector3d(BIAS_G[0], BIAS_G[1], BIAS_G[2]),
+                                           Vector3d(BIAS_A[0], BIAS_A[1], BIAS_A[2]));
 
-                    ROS_ASSERT(timeToIdx.find(tss) != timeToIdx.end());
-                    ROS_ASSERT(timeToIdx.find(tsf) != timeToIdx.end());
-                    ROS_ASSERT(tss != tsf);
-                    ROS_ASSERT(SwImuBundle[i][j][0].t == tss);
+                    auto   us = traj.computeTIndex(sample_time);
+                    double u  = us.first;
+                    int    s  = us.second;
 
-                    local_preints[i][j] = new PreintBase(SwImuBundle[i][j][0].acce, SwImuBundle[i][j][0].gyro,
-                                                         ssBia[i][j], ssBig[i][j], false,
-                                                         ACC_N, ACC_W, GYR_N, GYR_W, GRAV, i);
+                    double gyro_weight = GYR_N;
+                    double acce_weight = ACC_N;
+                    double bgyr_weight = GYR_W;
+                    double bacc_weight = ACC_W;
 
-                    for(int k = 1; k < SwImuBundle[i][j].size(); k++)
-                    {
-                        double dt = SwImuBundle[i][j][k].t - SwImuBundle[i][j][k-1].t;
-                        local_preints[i][j]->push_back(dt, SwImuBundle[i][j][k].acce, SwImuBundle[i][j][k].gyro);
-                    }
-                }
-            }
+                    ceres::CostFunction *cost_function =
+                        new GyroAcceBiasAnalyticFactor
+                            (SwImuBundle[i][j][k], imuBias, GRAV, gyro_weight, acce_weight, bgyr_weight, bacc_weight, SPLINE_N, traj.getDt(), u);
 
-            // Add the factors
-            for(int i = 0; i < WINDOW_SIZE; i++)
-            {
-                for(int j = 0; j < N_SUB_SEG; j++)
-                {
-                    if (SwImuBundle[i][j].size() < 3)
-                    {
-                        printf(KRED "Degenerate IMU sequence %d.%d. Size: %d, Time seg: [%.6f, %.6f]. CloudSize: %d.\n" RESET,
-                               i, j, SwImuBundle[i][j].size(), SwTimeStep[i][j].start_time, SwTimeStep[i][j].final_time, SwCloud[i]->size());
-                        continue;
-                    }
+                    // Find the coupled poses
+                    vector<double *> factor_param_blocks;
+                    for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                        factor_param_blocks.emplace_back(traj.getKnotSO3(knot_idx).data());
 
-                    double tss = SwImuBundle[i][j][0].u;
-                    double tsf = timeStartToFinal[tss];
+                    for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                        factor_param_blocks.emplace_back(traj.getKnotPos(knot_idx).data());
 
-                    ROS_ASSERT(timeToIdx.find(tss) != timeToIdx.end());
-                    ROS_ASSERT(timeToIdx.find(tsf) != timeToIdx.end());
-                    ROS_ASSERT(tss != tsf);
-                    ROS_ASSERT(SwImuBundle[i][j][0].t == tss);
+                    // gyro bias
+                    factor_param_blocks.emplace_back(BIAS_G);
 
-                    // local_preints.push_back( new PreintBase(SwImuBundle[i][j][0].acce,
-                    //                                         SwImuBundle[i][j][0].gyro,
-                    //                                         ssBia[i][j], ssBig[i][j],
-                    //                                         false, ACC_N, ACC_W,
-                    //                                                GYR_N, GYR_W, GRAV, i));
+                    // acce bias
+                    factor_param_blocks.emplace_back(BIAS_A);
 
-                    // for(int k = 1; k < SwImuBundle[i][j].size(); k++)
-                    // {
-                    //     double dt = SwImuBundle[i][j][k].t - SwImuBundle[i][j][k-1].t;
-                    //     local_preints.back()->push_back(dt, SwImuBundle[i][j][k].acce, SwImuBundle[i][j][k].gyro);
-                    // }
+                    // printf("Creating functor: u: %f, s: %d. sample: %d / %d\n", u, s, sample_idx, pose_gt.size());
 
-                    PreintFactor *preint_factor = new PreintFactor(local_preints[i][j]);
-                    ceres::internal::ResidualBlock *res_id
-                        = problem.AddResidualBlock(preint_factor, NULL,
-                                                   PARAM_POSE[tss], PARAM_VELO[tss], PARAM_BIAS[tss],
-                                                   PARAM_POSE[tsf], PARAM_VELO[tsf], PARAM_BIAS[tsf]);
-                    res_ids_pimu.push_back(res_id);
+                    // cost_function->SetNumResiduals(12);
+                    ceres::LossFunction* loss_function = imu_loss_thres < 0 ? NULL : new ceres::CauchyLoss(imu_loss_thres);
+                    auto res_block = problem.AddResidualBlock(cost_function, loss_function, factor_param_blocks);
+                    res_ids_pimu.push_back(res_block);    
                 }
             }
         }
-    
-        Util::ComputeCeresCost(res_ids_surf, cost_surf_init, problem);
-        Util::ComputeCeresCost(res_ids_pimu, cost_pimu_init, problem);
-
-        // printf("Be4Opt:\n");
-        // for(int i = 0; i < WINDOW_SIZE; i++)
-        // {
-        //     for(int j = 0; j < SwTimeStep[i].size(); j++)
-        //     {
-        //         printf("State %2d / %2d: Time: %6.3f. P: %6.3f, %6.3f, %6.3f. V: %6.3f, %6.3f, %6.3f\n"
-        //                  "               Time: %6.3f. P: %6.3f, %6.3f, %6.3f. V: %6.3f, %6.3f, %6.3f\n",
-        //                i, j, SwTimeStep[i][j].start_time, ssPos[i][j].x(), ssPos[i][j].y(), ssPos[i][j].z(), ssVel[i][j].x(), ssVel[i][j].y(), ssVel[i][j].z(),
-        //                      SwTimeStep[i][j].final_time, sfPos[i][j].x(), sfPos[i][j].y(), sfPos[i][j].z(), sfVel[i][j].x(), sfVel[i][j].y(), sfVel[i][j].z());
-        //     }
-        // }
-
-        tt_buildceres.Toc();
-        
-        TicToc tt_solve;
 
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
 
-        tt_solve.Toc();
+        // Copy the new knots back to the global trajectory
+        for(int knot_idx = 0; knot_idx < SwTraj.numKnots(); knot_idx++)
+            GlobalTraj->setKnot(SwTraj.getKnot(knot_idx), knot_idx + swBaseKnot);
+        
+        delete BIAS_G; delete BIAS_A;
 
-        Util::ComputeCeresCost(res_ids_surf, cost_surf_final, problem);
-        Util::ComputeCeresCost(res_ids_pimu, cost_pimu_final, problem);
+        tt_fitspline.Toc();    
+    }
+    
+    void LIOOptimization(slict::OptStat &report, string &lioop_times_report, PoseSplineX &traj,
+                         map<int, int> &prev_knot_x, map<int, int> &curr_knot_x, int swNextBase, int iter,
+                         vector<ImuIdx> &imuSelected,vector<lidarFeaIdx> &featureSelected, slict::TimeLog &tlog)
+    {
 
-        // Load values from params to state
-        for(int i = 0; i < WINDOW_SIZE; i++)
+        // Create the states for the bias
+        Vector3d XBIG(sfBig.back().back());
+        Vector3d XBIA(sfBia.back().back());
+
+        // Create a solver
+        static mySolver ms(nh_ptr);
+        string iekf_report = "";
+        bool ms_success = false;
+
+        // Solve the least square problem
+        if (!use_ceres)
+            ms_success = ms.Solve(traj, XBIG, XBIA, prev_knot_x, curr_knot_x, swNextBase, iter,
+                                  SwImuBundle, SwCloudDskDS, SwLidarCoef,
+                                  imuSelected, featureSelected, iekf_report, report, tlog);
+
+        if (ms_success)
         {
-            for(int j = 0; j < SwTimeStep[i].size(); j++)
+            struct Loader
             {
-                // Load the state at the start time of each segment
-                double ss_time = SwTimeStep[i][j].start_time;
-                loader.CopyParamToState(PARAM_POSE[ss_time], PARAM_VELO[ss_time], PARAM_BIAS[ss_time],
-                                        ssPos[i][j], ssQua[i][j], ssVel[i][j], ssBia[i][j], ssBig[i][j]);    
+                void CopyParamToState(double t, PoseSplineX &traj, double *ba, double *bg, Vector3d &BAMAX, Vector3d &BGMAX,
+                                      Vector3d &p_, Quaternd &q_, Vector3d &v_, Vector3d &ba_, Vector3d &bg_)
+                {
 
-                // Load the state at the final time of each segment
-                double sf_time = SwTimeStep[i][j].final_time;
-                loader.CopyParamToState(PARAM_POSE[sf_time], PARAM_VELO[sf_time], PARAM_BIAS[sf_time],
-                                        sfPos[i][j], sfQua[i][j], sfVel[i][j], sfBia[i][j], sfBig[i][j]);
+                    if (t < traj.minTime() + 1e-06)
+                    {
+                        // printf("State time is earlier than SW time: %f < %f\n", t, traj.minTime());
+                        t = traj.minTime() + 1e-06;
+                    }
+
+                    if (t > traj.maxTime() - 1e-06)
+                    {
+                        // printf("State time is later than SW time: %f > %f\n", t, traj.maxTime());
+                        t = traj.maxTime() - 1e-06;
+                    }
+
+                    SE3d pose = traj.pose(t);
+
+                    p_ = pose.translation();
+                    q_ = pose.so3().unit_quaternion();
+
+                    v_ = traj.transVelWorld(t);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (fabs(ba[i]) > BAMAX[i])
+                        {
+                            ba_(i) = ba[i]/fabs(ba[i])*BAMAX[i];
+                            break;
+                        }
+                        else
+                            ba_(i) = ba[i];
+                    }
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (fabs(bg[i]) > BGMAX[i])
+                        {
+                            bg_(i) = bg[i]/fabs(bg[i])*BGMAX[i];
+                            break;
+                        }
+                        else
+                            bg_(i) = bg[i];
+                    }
+
+                    // printf("Bg: %f, %f, %f -> %f, %f, %f\n", bg[0], bg[1], bg[2], bg_.x(), bg_.y(), bg_.z());
+                    // printf("Ba: %f, %f, %f -> %f, %f, %f\n", ba[0], ba[1], ba[2], ba_.x(), ba_.y(), ba_.z());
+                }
+
+            } loader;
+
+            // Load values from params to state
+            for(int i = 0; i < WINDOW_SIZE; i++)
+            {
+                for(int j = 0; j < SwTimeStep[i].size(); j++)
+                {
+                    // Load the state at the start time of each segment
+                    double ss_time = SwTimeStep[i][j].start_time;
+                    loader.CopyParamToState(ss_time, traj, XBIA.data(), XBIG.data(), BA_BOUND, BG_BOUND,
+                                            ssPos[i][j], ssQua[i][j], ssVel[i][j], ssBia[i][j], ssBig[i][j]);    
+
+                    // Load the state at the final time of each segment
+                    double sf_time = SwTimeStep[i][j].final_time;
+                    loader.CopyParamToState(sf_time, traj, XBIA.data(), XBIG.data(), BA_BOUND, BG_BOUND,
+                                            sfPos[i][j], sfQua[i][j], sfVel[i][j], sfBia[i][j], sfBig[i][j]);
+
+                    // printf("Vel %f: %.2f, %.2f, %.2f\n", sf_time, sfVel[i][j].x(), sfVel[i][j].y(), sfVel[i][j].z());
+                }
             }
         }
 
-        // printf("AftOpt:\n");
-        // for(int i = 0; i < WINDOW_SIZE; i++)
-        // {
-        //     for(int j = 0; j < SwTimeStep[i].size(); j++)
-        //     {
-        //         printf("State %2d / %2d: Time: %6.3f. P: %6.3f, %6.3f, %6.3f. V: %6.3f, %6.3f, %6.3f\n"
-        //                  "               Time: %6.3f. P: %6.3f, %6.3f, %6.3f. V: %6.3f, %6.3f, %6.3f\n",
-        //                i, j, SwTimeStep[i][j].start_time, ssPos[i][j].x(), ssPos[i][j].y(), ssPos[i][j].z(), ssVel[i][j].x(), ssVel[i][j].y(), ssVel[i][j].z(),
-        //                      SwTimeStep[i][j].final_time, sfPos[i][j].x(), sfPos[i][j].y(), sfPos[i][j].z(), sfVel[i][j].x(), sfVel[i][j].y(), sfVel[i][j].z());
-        //     }
-        // }
+        if(!ms_success)
+        {
+/* #region */ TicToc tt_buildceres;
 
-        // Delete the params
-        for(auto &param : PARAM_POSE) delete param.second;
-        for(auto &param : PARAM_VELO) delete param.second;
-        for(auto &param : PARAM_BIAS) delete param.second;
+/* #region */ TicToc tt_create;
+
+            // Create and solve the Ceres Problem
+            ceres::Problem problem;
+            ceres::Solver::Options options;
+
+            // Set up the options
+            options.minimizer_type                    = ceres::TRUST_REGION;
+            options.linear_solver_type                = linSolver;
+            options.trust_region_strategy_type        = trustRegType;
+            options.dense_linear_algebra_library_type = linAlgbLib;
+            options.max_num_iterations                = max_iterations;
+            options.max_solver_time_in_seconds        = max_solve_time;
+            options.num_threads                       = MAX_THREADS;
+            options.minimizer_progress_to_stdout      = false;
+            options.use_nonmonotonic_steps            = true;
+
+            ceres::LocalParameterization *local_parameterization = new LieAnalyticLocalParameterization<SO3d>();
+
+            // Number of knots of the spline
+            int KNOTS = traj.numKnots();
+
+            // Add the parameter blocks for rotational knots
+            for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
+                problem.AddParameterBlock(traj.getKnotSO3(knot_idx).data(), 4, local_parameterization);
+
+            // Add the parameter blocks for positional knots
+            for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
+                problem.AddParameterBlock(traj.getKnotPos(knot_idx).data(), 3);
+
+            // Add the parameters for imu biases
+            double *BIAS_G = XBIG.data();
+            double *BIAS_A = XBIA.data();
+
+            // BIAS_G[0] = sfBig.back().back().x(); BIAS_A[0] = sfBia.back().back().x();
+            // BIAS_G[1] = sfBig.back().back().y(); BIAS_A[1] = sfBia.back().back().y();
+            // BIAS_G[2] = sfBig.back().back().z(); BIAS_A[2] = sfBia.back().back().z();
+
+            problem.AddParameterBlock(BIAS_G, 3);
+            problem.AddParameterBlock(BIAS_A, 3);
+
+            // for(int i = 0; i < 3; i++)
+            // {
+            //     if(BG_BOUND[i] > 0)
+            //     {
+            //         problem.SetParameterLowerBound(BIAS_G, i, -BG_BOUND[i]);
+            //         problem.SetParameterUpperBound(BIAS_G, i,  BG_BOUND[i]);
+            //     }
+
+            //     if(BA_BOUND[i] > 0)
+            //     {
+            //         problem.SetParameterLowerBound(BIAS_A, i, -BA_BOUND[i]);
+            //         problem.SetParameterUpperBound(BIAS_A, i,  BA_BOUND[i]);
+            //     }
+            // }
+
+            // Fix the fist and the last N knots
+            first_fixed_knot = -1;
+            last_fixed_knot = -1;
+            for (int knot_idx = 0; knot_idx < KNOTS; knot_idx++)
+            {
+                if (
+                    traj.getKnotTime(knot_idx) <= traj.minTime() + start_fix_span
+                    // || traj.getKnotTime(knot_idx) > traj.getKnotTime(KNOTS-1) - final_fix_span
+                )
+                {
+                    if(first_fixed_knot == -1)
+                        first_fixed_knot = knot_idx;
+
+                    last_fixed_knot = knot_idx;
+                    problem.SetParameterBlockConstant(traj.getKnotSO3(knot_idx).data());
+                    problem.SetParameterBlockConstant(traj.getKnotPos(knot_idx).data());
+                }
+            }
+
+/* #endregion */ tt_create.Toc();
+
+/* #region */ TicToc tt_addlidar;
+
+            // Cloud to show points being associated
+            CloudXYZIPtr assocCloud(new CloudXYZI());
+
+            // Add the lidar factors
+            vector<ceres::internal::ResidualBlock *> res_ids_surf;
+            double cost_surf_init = -1, cost_surf_final = -1;
+            if(fuse_lidar)
+            {
+                // Shared loss function
+                ceres::LossFunction *lidar_loss_function = lidar_loss_thres == -1 ? NULL : new ceres::CauchyLoss(lidar_loss_thres);
+                int factor_idx = 0;
+
+                // Find and mark the used factors
+                // for (int i = 0; i < WINDOW_SIZE; i++)
+                // {
+                // #pragma omp parallel for num_threads(MAX_THREADS)
+                for (int j = 0; j < featureSelected.size(); j++)
+                {   
+                    int  i = featureSelected[j].wdidx;
+                    int  k = featureSelected[j].pointidx;
+                    int  depth = featureSelected[j].depth;
+
+                    auto &point = SwCloudDskDS[i]->points[k];
+                    int  point_idx = (int)(point.intensity);
+                    int  coeff_idx = k;
+
+                    const LidarCoef &coef = SwLidarCoef[i][coeff_idx];
+                    // ROS_ASSERT_MSG(coef.t >= 0, "i = %d, k = %d, t = %f", i, k, coef.t);
+                    double sample_time = coef.t;
+                    // ROS_ASSERT(traj.TimeIsValid(sample_time, 1e-6));
+                    auto   us = traj.computeTIndex(sample_time);
+                    double u  = us.first;
+                    int    s  = us.second;
+                    int base_knot = s;
+                    vector<double*> factor_param_blocks;
+                    // Add the parameter blocks for rotation
+                    for (int knot_idx = base_knot; knot_idx < base_knot + SPLINE_N; knot_idx++)
+                        factor_param_blocks.push_back(traj.getKnotSO3(knot_idx).data());
+                    // Add the parameter blocks for position
+                    for (int knot_idx = base_knot; knot_idx < base_knot + SPLINE_N; knot_idx++)
+                        factor_param_blocks.push_back(traj.getKnotPos(knot_idx).data());
+                    // Shared associate settings
+                    factor_idx++;
+                    assocSettings settings(use_ufm, reassoc_rate > 0, reassoc_rate,
+                                           surfel_min_point, surfel_min_plnrty, surfel_intsect_rad, dis_to_surfel_max,
+                                           lidar_weight, i*100000 + factor_idx);
+                    // Add the residual
+                    typedef PointToPlaneAnalyticFactor<PredType> p2pFactor;
+                    auto res = problem.AddResidualBlock(
+                                new p2pFactor(coef.finW, coef.f, coef.n, coef.plnrty*lidar_weight,
+                                              SPLINE_N, traj.getDt(), u, activeSurfelMap, *commonPred, activeikdtMap, settings),
+                                              lidar_loss_function, factor_param_blocks);
+                    res_ids_surf.push_back(res);    
+                    // Add point to visualization
+                    PointXYZI pointInW; pointInW.x = coef.finW.x(); pointInW.y = coef.finW.y(); pointInW.z = coef.finW.z();
+                    assocCloud->push_back(pointInW);
+                    assocCloud->points.back().intensity = i;
+                }
+                // }
+            }
+
+/* #endregion */ tt_addlidar.Toc();
         
-        /* #region Load data to the report ------------------------------------------------------*/
+/* #region */ TicToc tt_addimu;
 
-        report.surfFactors = res_ids_surf.size();
-        report.J0Surf = cost_surf_init;
-        report.JKSurf = cost_surf_final;
+            // Create and add the new preintegration factors
+            vector<ceres::internal::ResidualBlock *> res_ids_pimu;
+            double cost_pimu_init = -1, cost_pimu_final = -1;
+            // deque<deque<PreintBase *>> local_preints(WINDOW_SIZE, deque<PreintBase *>(N_SUB_SEG));
+            if(fuse_imu)
+            {
+                ceres::LossFunction* loss_function = imu_loss_thres < 0 ? NULL : new ceres::CauchyLoss(imu_loss_thres);
+
+                for(int i = 0; i < WINDOW_SIZE; i++)
+                {
+                    for(int j = 0; j < N_SUB_SEG; j++)
+                    {
+                        for(int k = 1; k < SwImuBundle[i][j].size(); k++)
+                        {
+                            double sample_time = SwImuBundle[i][j][k].t;
+                            
+                            // Skip if sample time exceeds the bound
+                            if (!traj.TimeIsValid(sample_time, 1e-6))
+                                continue;
+
+                            auto imuBias = ImuBias(Vector3d(BIAS_G[0], BIAS_G[1], BIAS_G[2]),
+                                                Vector3d(BIAS_A[0], BIAS_A[1], BIAS_A[2]));
         
-        report.imuFactors = res_ids_pimu.size();
-        report.J0Imu = cost_pimu_init;
-        report.JKImu = cost_pimu_final;
+                            auto   us = traj.computeTIndex(sample_time);
+                            double u  = us.first;
+                            int    s  = us.second;
 
-        report.velFactors = 0;  //res_ids_vel.size();
-        report.J0Vel = -1;      //cost_vel_init;
-        report.JKVel = -1;      //cost_vel_final;
+                            double gyro_weight = GYR_N;
+                            double acce_weight = ACC_N;
+                            double bgyr_weight = GYR_W;
+                            double bacc_weight = ACC_W;
 
-        report.J0 = summary.initial_cost;
-        report.JK = summary.final_cost;
-        
-        report.Qest.x = sfQua.back().back().x();
-        report.Qest.y = sfQua.back().back().y();
-        report.Qest.z = sfQua.back().back().z();
-        report.Qest.w = sfQua.back().back().w();
+                            ceres::CostFunction *cost_function =
+                                new GyroAcceBiasAnalyticFactor
+                                    (SwImuBundle[i][j][k], imuBias, GRAV, gyro_weight, acce_weight, bgyr_weight, bacc_weight, SPLINE_N, traj.getDt(), u);
 
-        report.Pest.x = sfPos.back().back().x();
-        report.Pest.y = sfPos.back().back().y();
-        report.Pest.z = sfPos.back().back().z();
+                            // Find the coupled poses
+                            vector<double *> factor_param_blocks;
+                            for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                                factor_param_blocks.emplace_back(traj.getKnotSO3(knot_idx).data());
 
-        report.Vest.x = sfVel.back().back().x();
-        report.Vest.y = sfVel.back().back().y();
-        report.Vest.z = sfVel.back().back().z();
+                            for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                                factor_param_blocks.emplace_back(traj.getKnotPos(knot_idx).data());
 
-        report.Qimu.x = SwPropState.back().back().Q.back().x();
-        report.Qimu.y = SwPropState.back().back().Q.back().y();
-        report.Qimu.z = SwPropState.back().back().Q.back().z();
-        report.Qimu.w = SwPropState.back().back().Q.back().w();
+                            // gyro bias
+                            factor_param_blocks.emplace_back(BIAS_G);
 
-        report.Pimu.x = SwPropState.back().back().P.back().x();
-        report.Pimu.y = SwPropState.back().back().P.back().y();
-        report.Pimu.z = SwPropState.back().back().P.back().z();
+                            // acce bias
+                            factor_param_blocks.emplace_back(BIAS_A);
 
-        report.Vimu.x = SwPropState.back().back().V.back().x();
-        report.Vimu.y = SwPropState.back().back().V.back().y();
-        report.Vimu.z = SwPropState.back().back().V.back().z();
+                            // cost_function->SetNumResiduals(12);
+                            auto res_block = problem.AddResidualBlock(cost_function, loss_function, factor_param_blocks);
+                            res_ids_pimu.push_back(res_block);    
+                        }
+                    }
+                }
+            }
 
-        // Calculate the relative pose to the last keyframe
-        PointPose lastKf = KfCloudPose->back();
-        myTf tf_W_Blast(lastKf);
+/* #endregion */ tt_addimu.Toc();
 
-        report.lastKfId = (int)(lastKf.intensity);
-        myTf tf_Blast_Bcurr = tf_W_Blast.inverse()*myTf(sfQua.back().back(), sfPos.back().back());
+/* #region */ TicToc tt_addpp;
 
-        report.Qref.x = tf_Blast_Bcurr.rot.x();
-        report.Qref.y = tf_Blast_Bcurr.rot.y();
-        report.Qref.z = tf_Blast_Bcurr.rot.z();
-        report.Qref.w = tf_Blast_Bcurr.rot.w();
-        
-        report.Pref.x = tf_Blast_Bcurr.pos.x();
-        report.Pref.y = tf_Blast_Bcurr.pos.y();
-        report.Pref.z = tf_Blast_Bcurr.pos.z();
-        
-        report.iters = summary.iterations.size();
-        report.tbuildceres = tt_buildceres.GetLastStop();
-        report.tslv  = tt_solve.GetLastStop();
-        report.trun  = (ros::Time::now() - program_start_time).toSec();
+            vector<ceres::internal::ResidualBlock *> res_ids_poseprop;
+            double cost_poseprop_init = -1, cost_poseprop_final = -1;
+            if(fuse_poseprop)
+            {
+                // Add the poses
+                for(int i = 0; i < WINDOW_SIZE - 1 - reassociate_steps; i++)
+                {
+                    for(int j = 0; j < SwPropState[i].size(); j++)
+                    {
+                        for (int k = 0; k < SwPropState[i][j].size()-1; k++)
+                        {
+                            double sample_time = SwPropState[i][j].t[k];
 
-        report.BANum            = baReport.turn;
-        report.BAItr            = baReport.pgopt_iter;
-        report.BALoopTime       = tt_loopBA.GetLastStop();
-        report.BASolveTime      = baReport.pgopt_time;
-        report.BARelPoseFactors = baReport.factor_relpose;
-        report.BALoopFactors    = baReport.factor_loop;
-        report.BAJ0             = baReport.J0;
-        report.BAJK             = baReport.JK;
-        report.BAJ0RelPose      = baReport.J0_relpose;
-        report.BAJKRelPose      = baReport.JK_relpose;
-        report.BAJ0Loop         = baReport.J0_loop;
-        report.BAJKLoop         = baReport.JK_loop;
+                            // Continue if sample is in the window
+                            if (!traj.TimeIsValid(sample_time, 1e-6) || sample_time > traj.minTime() + 0.1)
+                                continue;
 
-        // Publish the assoc cloud
-        static ros::Publisher assoc_cloud_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/assoc_cloud", 100);
-        Util::publishCloud(assoc_cloud_pub, *assocCloud, ros::Time(SwTimeStep.back().back().final_time), string("world"));
-        
-        /* #endregion #region Load data to the report -------------------------------------------*/
+                            auto   us = traj.computeTIndex(sample_time);
+                            double u  = us.first;
+                            int    s  = us.second;
+
+                            // Pose
+                            ceres::CostFunction *cost_function
+                                = new PoseAnalyticFactor
+                                        (myTf(SwPropState[i][j].Q[k], SwPropState[i][j].P[k]).getSE3(), POSE_N, POSE_N, SPLINE_N, traj.getDt(), u);
+
+                            // Find the coupled poses
+                            vector<double *> factor_param_blocks;
+                            for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                                factor_param_blocks.emplace_back(traj.getKnotSO3(knot_idx).data());
+
+                            for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                                factor_param_blocks.emplace_back(traj.getKnotPos(knot_idx).data());
+
+                            auto res_block = problem.AddResidualBlock(cost_function, NULL, factor_param_blocks);
+                            res_ids_poseprop.push_back(res_block);
+                        }
+                    }
+                }
+            }
+
+            vector<ceres::internal::ResidualBlock *> res_ids_velprop;
+            double cost_velprop_init = -1, cost_velprop_final = -1;
+            if(fuse_velprop)
+            {
+                // Add the velocity
+                for(int i = 0; i < 1; i++)
+                {
+                    for(int j = 0; j < SwPropState[i].size(); j++)
+                    {
+                        for (int k = 0; k < SwPropState[i][j].size()-1; k++)
+                        {
+                            double sample_time = SwPropState[i][j].t[k];
+
+                            // Continue if sample is in the window
+                            if (sample_time < traj.minTime() + 1.0e-6 || sample_time > traj.maxTime() - 1.0e-6)
+                                continue;
+
+                            auto   us = traj.computeTIndex(sample_time);
+                            double u  = us.first;
+                            int    s  = us.second;
+
+                            double &vel_weight = VEL_N;
+
+                            // Velocity
+                            ceres::CostFunction *vel_cost_function
+                                = new VelocityAnalyticFactor(SwPropState[i][j].V[k], vel_weight, SPLINE_N, traj.getDt(), u);
+
+                            // Find the coupled poses
+                            vector<double *> factor_param_blocks;
+                            for (int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                                factor_param_blocks.emplace_back(traj.getKnotPos(knot_idx).data());
+
+                            auto res_block = problem.AddResidualBlock(vel_cost_function, NULL, factor_param_blocks);
+                            res_ids_velprop.push_back(res_block);
+                        }
+                    }
+                }
+            }
+
+/* #endregion */ tt_addpp.Toc();
+            
+/* #region */ TicToc tt_init_cost;
+
+            if(find_factor_cost)
+            {
+                Util::ComputeCeresCost(res_ids_surf, cost_surf_init, problem);
+                Util::ComputeCeresCost(res_ids_pimu, cost_pimu_init, problem);
+                Util::ComputeCeresCost(res_ids_poseprop, cost_poseprop_init, problem);
+                Util::ComputeCeresCost(res_ids_velprop, cost_velprop_init, problem);
+            }
+
+/* #endregion */ tt_init_cost.Toc();
+            
+/* #endregion */ tt_buildceres.Toc(); tlog.t_prep.push_back(tt_buildceres.GetLastStop());
+
+/* #region */ TicToc tt_solve;
+
+            if (ensure_real_time)
+            {
+                t_slv_budget = max(50.0, sweep_len * 95 - (tt_preopt.GetLastStop() + tt_buildceres.GetLastStop()));
+                if (packet_buf.size() > 0)
+                    t_slv_budget = 50.0;
+                options.max_solver_time_in_seconds = t_slv_budget/1000.0;
+            }
+            else
+                t_slv_budget = options.max_solver_time_in_seconds*1000;
+
+            ceres::Solver::Summary summary;
+            ceres::Solve(options, &problem, &summary);
+
+/* #endregion */ tt_solve.Toc(); tlog.t_compute.push_back(tt_solve.GetLastStop());
+
+/* #region */ TicToc tt_aftsolve;
+
+/* #region */ TicToc tt_final_cost;
+            if(find_factor_cost)
+            {
+                Util::ComputeCeresCost(res_ids_surf, cost_surf_final, problem);
+                Util::ComputeCeresCost(res_ids_pimu, cost_pimu_final, problem);
+                Util::ComputeCeresCost(res_ids_poseprop, cost_poseprop_final, problem);
+                Util::ComputeCeresCost(res_ids_velprop, cost_velprop_final, problem);
+            }
+/* #endregion */ tt_final_cost.Toc();
+
+/* #region  */ TicToc tt_load;
+
+            struct Loader
+            {
+                // void CopyStateToParam(Vector3d &p_, Quaternd &q_, Vector3d &v_,
+                //                       Vector3d &ba, Vector3d &bg,
+                //                       double *&pose, double *&velo, double *&bias)
+                // {
+                //     pose[0] = p_.x(); pose[1] = p_.y(); pose[2] = p_.z();
+                //     pose[3] = q_.x(); pose[4] = q_.y(); pose[5] = q_.z(); pose[6] = q_.w();
+
+                //     velo[0] = v_.x(); velo[1] = v_.y(); velo[2] = v_.z();
+                    
+                //     bias[0] = ba.x(); bias[1] = ba.y(); bias[2] = ba.z();
+                //     bias[3] = bg.x(); bias[4] = bg.y(); bias[5] = bg.z();
+                // }
+
+                void CopyParamToState(double t, PoseSplineX &traj, double *&ba, double *&bg, Vector3d &BAMAX, Vector3d &BGMAX,
+                                    Vector3d &p_, Quaternd &q_, Vector3d &v_, Vector3d &ba_, Vector3d &bg_)
+                {
+
+                    if (t < traj.minTime() + 1e-06)
+                    {
+                        // printf("State time is earlier than SW time: %f < %f\n", t, traj.minTime());
+                        t = traj.minTime() + 1e-06;
+                    }
+
+                    if (t > traj.maxTime() - 1e-06)
+                    {
+                        // printf("State time is later than SW time: %f > %f\n", t, traj.maxTime());
+                        t = traj.maxTime() - 1e-06;
+                    }
+
+                    SE3d pose = traj.pose(t);
+
+                    p_ = pose.translation();
+                    q_ = pose.so3().unit_quaternion();
+
+                    v_ = traj.transVelWorld(t);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (fabs(ba[i]) > BAMAX[i])
+                        {
+                            ba_ = Vector3d(0, 0, 0);
+                            break;
+                        }
+                        else
+                            ba_(i) = ba[i];
+                    }
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (fabs(bg[i]) > BGMAX[i])
+                        {
+                            bg_ = Vector3d(0, 0, 0);
+                            break;
+                        }
+                        else
+                            bg_(i) = bg[i];
+                    }
+
+                    // printf("Bg: %f, %f, %f -> %f, %f, %f\n", bg[0], bg[1], bg[2], bg_.x(), bg_.y(), bg_.z());
+                    // printf("Ba: %f, %f, %f -> %f, %f, %f\n", ba[0], ba[1], ba[2], ba_.x(), ba_.y(), ba_.z());
+                }
+
+            } loader;
+
+            // Load values from params to state
+            for(int i = 0; i < WINDOW_SIZE; i++)
+            {
+                for(int j = 0; j < SwTimeStep[i].size(); j++)
+                {
+                    // Load the state at the start time of each segment
+                    double ss_time = SwTimeStep[i][j].start_time;
+                    loader.CopyParamToState(ss_time, traj, BIAS_A, BIAS_G, BA_BOUND, BG_BOUND,
+                                            ssPos[i][j], ssQua[i][j], ssVel[i][j], ssBia[i][j], ssBig[i][j]);    
+
+                    // Load the state at the final time of each segment
+                    double sf_time = SwTimeStep[i][j].final_time;
+                    loader.CopyParamToState(sf_time, traj, BIAS_A, BIAS_G, BA_BOUND, BG_BOUND,
+                                            sfPos[i][j], sfQua[i][j], sfVel[i][j], sfBia[i][j], sfBig[i][j]);
+
+                    // printf("Vel %f: %.2f, %.2f, %.2f\n", sf_time, sfVel[i][j].x(), sfVel[i][j].y(), sfVel[i][j].z());
+                }
+            }
+            
+            // delete BIAS_G; delete BIAS_A;
+
+/* #endregion */ tt_load.Toc();
+            
+/* #region Load data to the report */ TicToc tt_report;
+
+            tlog.ceres_iter = summary.iterations.size();
+
+            report.surfFactors = res_ids_surf.size();
+            report.J0Surf = cost_surf_init;
+            report.JKSurf = cost_surf_final;
+            
+            report.imuFactors = res_ids_pimu.size();
+            report.J0Imu = cost_pimu_init;
+            report.JKImu = cost_pimu_final;
+
+            report.propFactors = res_ids_poseprop.size();
+            report.J0Prop = cost_poseprop_init;
+            report.JKProp = cost_poseprop_final;
+
+            report.velFactors = res_ids_velprop.size();
+            report.J0Vel = cost_velprop_init;      //cost_vel_init;
+            report.JKVel = cost_velprop_final;     //cost_vel_final;
+
+            report.J0 = summary.initial_cost;
+            report.JK = summary.final_cost;
+            
+            report.Qest.x = sfQua.back().back().x();
+            report.Qest.y = sfQua.back().back().y();
+            report.Qest.z = sfQua.back().back().z();
+            report.Qest.w = sfQua.back().back().w();
+
+            report.Pest.x = sfPos.back().back().x();
+            report.Pest.y = sfPos.back().back().y();
+            report.Pest.z = sfPos.back().back().z();
+
+            report.Vest.x = sfVel.back().back().x();
+            report.Vest.y = sfVel.back().back().y();
+            report.Vest.z = sfVel.back().back().z();
+
+            report.Qimu.x = SwPropState.back().back().Q.back().x();
+            report.Qimu.y = SwPropState.back().back().Q.back().y();
+            report.Qimu.z = SwPropState.back().back().Q.back().z();
+            report.Qimu.w = SwPropState.back().back().Q.back().w();
+
+            report.Pimu.x = SwPropState.back().back().P.back().x();
+            report.Pimu.y = SwPropState.back().back().P.back().y();
+            report.Pimu.z = SwPropState.back().back().P.back().z();
+
+            report.Vimu.x = SwPropState.back().back().V.back().x();
+            report.Vimu.y = SwPropState.back().back().V.back().y();
+            report.Vimu.z = SwPropState.back().back().V.back().z();
+
+            // Calculate the relative pose to the last keyframe
+            PointPose lastKf = KfCloudPose->back();
+            myTf tf_W_Blast(lastKf);
+
+            report.lastKfId = (int)(lastKf.intensity);
+            myTf tf_Blast_Bcurr = tf_W_Blast.inverse()*myTf(sfQua.back().back(), sfPos.back().back());
+
+            report.Qref.x = tf_Blast_Bcurr.rot.x();
+            report.Qref.y = tf_Blast_Bcurr.rot.y();
+            report.Qref.z = tf_Blast_Bcurr.rot.z();
+            report.Qref.w = tf_Blast_Bcurr.rot.w();
+            
+            report.Pref.x = tf_Blast_Bcurr.pos.x();
+            report.Pref.y = tf_Blast_Bcurr.pos.y();
+            report.Pref.z = tf_Blast_Bcurr.pos.z();
+            
+            report.iters = summary.iterations.size();
+            report.tbuildceres = tt_buildceres.GetLastStop();
+            report.tslv  = tt_solve.GetLastStop();
+            report.trun  = (ros::Time::now() - program_start_time).toSec();
+
+            report.BANum            = baReport.turn;
+            report.BAItr            = baReport.pgopt_iter;
+            report.BALoopTime       = tt_loopBA.GetLastStop();
+            report.BASolveTime      = baReport.pgopt_time;
+            report.BARelPoseFactors = baReport.factor_relpose;
+            report.BALoopFactors    = baReport.factor_loop;
+            report.BAJ0             = baReport.J0;
+            report.BAJK             = baReport.JK;
+            report.BAJ0RelPose      = baReport.J0_relpose;
+            report.BAJKRelPose      = baReport.JK_relpose;
+            report.BAJ0Loop         = baReport.J0_loop;
+            report.BAJKLoop         = baReport.JK_loop;
+
+/* #endregion Load data to the report */ tt_report.Toc();
+
+// /* #region */ TicToc tt_showassoc;
+
+//             // Publish the assoc cloud
+//             static ros::Publisher assoc_cloud_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/assoc_cloud", 100);
+//             Util::publishCloud(assoc_cloud_pub, *assocCloud, ros::Time(SwTimeStep.back().back().final_time), current_ref_frame);
+
+// /* #endregion */ tt_showassoc.Toc();
+
+/* #endregion */ tt_aftsolve.Toc(); tlog.t_update.push_back(tt_aftsolve.GetLastStop());
+
+            lioop_times_report = ""; 
+            if(GetBoolParam("/show_lioop_times", false))
+            {
+                lioop_times_report += "lioop: ";
+                lioop_times_report += "crt: "     + myprintf("%3.1f. ", tt_create.GetLastStop());
+                lioop_times_report += "addldr: "  + myprintf("%4.1f. ", tt_addlidar.GetLastStop());
+                lioop_times_report += "addimu: "  + myprintf("%3.1f. ", tt_addimu.GetLastStop());
+                lioop_times_report += "addpp: "   + myprintf("%3.1f. ", tt_addpp.GetLastStop());
+                lioop_times_report += "J0: "      + myprintf("%4.1f. ", tt_init_cost.GetLastStop());
+                lioop_times_report += "bc: "      + myprintf("%4.1f. ", tt_buildceres.GetLastStop());
+                lioop_times_report += "slv: "     + myprintf("%4.1f. ", tt_solve.GetLastStop());
+                lioop_times_report += "JK: "      + myprintf("%4.1f. ", tt_final_cost.GetLastStop());
+                lioop_times_report += "load: "    + myprintf("%3.1f. ", tt_load.GetLastStop());
+                lioop_times_report += "rep: "     + myprintf("%3.1f. ", tt_load.GetLastStop());
+                // lioop_times_report += "showasc: " + myprintf("%3.1f. ", tt_showassoc.GetLastStop());
+                lioop_times_report += "aftslv: "  + myprintf("%3.1f, ", tt_aftsolve.GetLastStop());
+                lioop_times_report += "\n";
+            }
+        }
+
+        lioop_times_report += iekf_report;
     }
 
     void NominateKeyframe()
     {
-        int mid_step = 0;//max(0, int(std::floor(WINDOW_SIZE/2.0)));
+        tt_margcloud.Tic();
+
+        int mid_step = 0;//int(std::floor(WINDOW_SIZE/2.0));
 
         static double last_kf_time = SwTimeStep[mid_step].back().final_time;
 
@@ -1660,89 +2907,46 @@ public:
         }
         bool kf_timeout = fabs(kf_cand_time - last_kf_time) > 2.0 && (knn_sq_dis.front() > 0.1*0.1);
 
-        if (far_distance || far_angle || kf_timeout)
+        bool ikdtree_init = false;
+        if(!use_ufm)
+        {
+            static int init_count = 20;
+            if(init_count > 0)
+            {
+                init_count--;
+                ikdtree_init = true;
+            }
+        }
+
+        if (far_distance || far_angle || kf_timeout || ikdtree_init)
         {
             last_kf_time = kf_cand_time;
 
-            int pointsTotal = SwCloudDsk[mid_step]->size();
-            ROS_ASSERT(SwLidarCoef[mid_step].size() == pointsTotal*surfel_query_depth);
+            static double leaf_sq = pow(leaf_size, 2);
 
-            // Create a local map
-            CloudXYZITPtr localMap(new CloudXYZIT());
+            IOAOptions ioaOpt;
+            IOASummary ioaSum;
+            ioaSum.final_tf = tf_W_Bcand;
+            CloudXYZIPtr marginalizedCloudInW(new CloudXYZI());
+            pcl::transformPointCloud(*SwCloudDsk[mid_step], *marginalizedCloudInW, tf_W_Bcand.cast<float>().tfMat());
 
-            for(int i = 0; i < knn_idx.size(); i++)
-                *localMap += *KfCloudinW[knn_idx[i]];
+            // CloudXYZIPtr marginalizedCloud(new CloudXYZI());
+            int margCount = marginalizedCloudInW->size();
 
-            KdTreeFLANN<PointXYZIT> kdTreeLocMap; kdTreeLocMap.setInputCloud(localMap);
-
-            // Evaluate points to admit to the surfel map
-            CloudXYZITPtr tempCloud(new CloudXYZIT()); tempCloud->resize(pointsTotal);
-            #pragma omp parallel for num_threads(MAX_THREADS)
-            for(int i = 0; i < pointsTotal; i++)
-            {
-                // Use the 1 index because we didn't do any association on 0
-                LidarCoef &coef = SwLidarCoef[mid_step][i*surfel_query_depth + surfel_min_depth];
-                
-                // Confirm the idx
-                int idx = coef.ptIdx; ROS_ASSERT(idx == i);
-
-                // Preload the point
-                tempCloud->points[idx] = SwCloudDsk[mid_step]->points[idx];
-                Vector3d pointInW_ = tf_W_Bcand*Vector3d(tempCloud->points[idx].x, tempCloud->points[idx].y, tempCloud->points[idx].z);
-                PointXYZIT pointInW; pointInW.x = pointInW_.x(); pointInW.y = pointInW_.y(); pointInW.z = pointInW_.z();
-
-                // Check to see if it is in some near neighbourhood
-                vector<int> nbr_idx; vector<float> nbr_sq_dis;
-                kdTreeLocMap.nearestKSearch(pointInW, surfel_min_point, nbr_idx, nbr_sq_dis);
-
-                // if (i == 4269)
-                //     printf("Point: %.3f, %.3f, %.3f. Nbr: %.3f, %.3f, %.3f. Dis: %.3f. DisCal: %.3f\n",
-                //             pointInW_.x(), pointInW_.y(), pointInW_.z(),
-                //             localMap->points[nbr_idx[0]].x, localMap->points[nbr_idx[0]].y, localMap->points[nbr_idx[0]].z,
-                //             nbr_sq_dis[0], (pointInW_ - Vector3d(localMap->points[nbr_idx[0]].x,  localMap->points[nbr_idx[0]].y,  localMap->points[nbr_idx[0]].z)).norm());
-                
-                if(nbr_sq_dis.front() > pow(0.5*leaf_size, 2)) // An isolated point, fit for admitting
-                    tempCloud->points[idx].t = -1;
-            }
-
-            CloudXYZITPtr marginalizedCloud(new CloudXYZIT());
-            int margCount = 0;
-            for(int i = 0; i < pointsTotal; i++)
-            {
-                // If point didn't find association, marginalize them
-                if (tempCloud->points[i].t < 0)
-                {
-                    marginalizedCloud->push_back(tempCloud->points[i]); margCount++;
-                    continue;
-                }
-
-                // Add points that are close to the plane
-                // if (coef.d2P < leaf_size)
-                // {
-                //     marginalizedCloud->push_back(SwCloudDsk[mid_step]->points[idx]);
-                //     continue;
-                // }
-
-                // Add points to surfels that have few points
-                // if (coef.surfNp < pow(8, coef.scale))
-                // {
-                //     marginalizedCloud->push_back(SwCloudDsk[mid_step]->points[idx]);
-                //     continue;
-                // }
-            }
-
-            margPerc = 100.0*margCount / pointsTotal;
-            AdmitKeyframe(SwTimeStep[mid_step].back().final_time, sfQua[mid_step].back(), sfPos[mid_step].back(),
-                          SwCloudDsk[mid_step], marginalizedCloud);
+            margPerc = double(margCount)/SwCloudDsk[mid_step]->size();
+            AdmitKeyframe(SwTimeStep[mid_step].back().final_time, tf_W_Bcand.rot, tf_W_Bcand.pos,
+                          SwCloudDsk[mid_step], marginalizedCloudInW);
         }
+
+        tt_margcloud.Toc();
     }
 
-    void AdmitKeyframe(double t, Quaternd q, Vector3d p, CloudXYZITPtr &cloud, CloudXYZITPtr &marginalizedCloud)
+    void AdmitKeyframe(double t, Quaternd q, Vector3d p, CloudXYZIPtr &cloud, CloudXYZIPtr &marginalizedCloudInW)
     {
-        tt_ufmupdt.Tic();
+        tt_ufoupdate.Tic();
 
-        KfCloudinB.push_back(CloudXYZITPtr(new CloudXYZIT()));
-        KfCloudinW.push_back(CloudXYZITPtr(new CloudXYZIT()));
+        KfCloudinB.push_back(CloudXYZIPtr(new CloudXYZI()));
+        KfCloudinW.push_back(CloudXYZIPtr(new CloudXYZI()));
 
         *KfCloudinB.back() = *cloud;
         pcl::transformPointCloud(*KfCloudinB.back(), *KfCloudinW.back(), p, q);
@@ -1763,220 +2967,223 @@ public:
         }
 
         // Add keyframe pointcloud to surfel map
-        if (marginalizedCloud != cloud)
-        {
-            pcl::transformPointCloud(*marginalizedCloud, *marginalizedCloud, p, q);
-            insertCloudToSurfelMap(surfelMap, *marginalizedCloud);
-        }
-        else
-            insertCloudToSurfelMap(surfelMap, *KfCloudinW.back());
-
-        // printf("Af4 add: GMap: %d.\n", globalMap->size(), KfCloudinW.back()->size());
+        SendCloudToMapQueue(marginalizedCloudInW);
 
         // Filter global map
         if (KfCloudPose->size() > 1 && publish_map)
         {
-            pcl::UniformSampling<PointXYZIT> downsampler;
+            pcl::UniformSampling<PointXYZI> downsampler;
             downsampler.setRadiusSearch(leaf_size);
             downsampler.setInputCloud(globalMap);
             downsampler.filter(*globalMap);
         }
 
-        Util::publishCloud(kfcloud_pub, marginalizedCloud == cloud
-                                        ? *KfCloudinW.back() : *marginalizedCloud,
-                                        ros::Time(t), string("world"));
-        Util::publishCloud(kfpose_pub,  *KfCloudPose, ros::Time(t), string("world"));
+        static ros::Publisher margcloud_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/marginalized_cloud", 100);
+        Util::publishCloud(margcloud_pub, *marginalizedCloudInW, ros::Time(t), current_ref_frame);
+
+        sensor_msgs::PointCloud2 kfCloudROS
+            = Util::publishCloud(kfcloud_pub, *KfCloudinW.back(), ros::Time(t), current_ref_frame);
+
+        sensor_msgs::PointCloud2 kfPoseCloudROS
+            = Util::publishCloud(kfpose_pub, *KfCloudPose, ros::Time(t), current_ref_frame);
+        
+        slict::FeatureCloud msg;
+        msg.header.stamp = ros::Time(t);
+        msg.pose.position.x = p.x();
+        msg.pose.position.y = p.y();
+        msg.pose.position.z = p.z();
+        msg.pose.orientation.x = q.x();
+        msg.pose.orientation.y = q.y();
+        msg.pose.orientation.z = q.z();
+        msg.pose.orientation.w = q.w();        
+        msg.extracted_cloud = kfCloudROS;
+        msg.edge_cloud = kfPoseCloudROS;
+        msg.scanStartTime = t;
+        msg.scanEndTime = t;
+        kfcloud_std_pub.publish(msg);
 
         if (publish_map)
-            Util::publishCloud(global_map_pub, *globalMap, ros::Time(t), string("world"));
+            Util::publishCloud(global_map_pub, *globalMap, ros::Time(t), current_ref_frame);
 
-        tt_ufmupdt.Toc();    
+        tt_ufoupdate.Toc();    
     }
 
-    void AssociateCloudWithMap(deque<TimeSegment> &timeStep, ufoSurfelMap const &Map, mytf tf_W_B,
-                               CloudXYZITPtr &CloudSkewed, CloudXYZITPtr &CloudDeskewed, CloudXYZITPtr &CloudDeskewedDS,
-                               deque<LidarCoef> &CloudCoef, map<int, int> &stat)
+    void SendCloudToMapQueue(CloudXYZIPtr &cloud)
     {
-        int pointsCount = CloudSkewed->points.size();
-        if (CloudCoef.size() != pointsCount * surfel_query_depth)
-        {
-            // Initialize the coefficent buffer
-            CloudCoef = deque<LidarCoef>(pointsCount * surfel_query_depth);
+        lock_guard<mutex> lg(mapqueue_mtx);
+        mapqueue.push_back(cloud);
+    }
 
-            // Check the fitness of points with respect to each surfel
-            #pragma omp parallel for num_threads(MAX_THREADS)
-            for (int i = 0; i < pointsCount; i++)
+    void UpdateMap()
+    {
+        while(ros::ok())
+        {
+            if (mapqueue.size() == 0)
             {
-                for (int depth = 0; depth < surfel_query_depth; depth++)
+                this_thread::sleep_for(chrono::milliseconds(5));
+                continue;
+            }
+            
+            // Extract the cloud
+            CloudXYZIPtr cloud;
+            {
+                lock_guard<mutex> lg(mapqueue_mtx);
+                cloud = mapqueue.front();
+                mapqueue.pop_front();
+            }
+
+            // Insert the cloud to the map
+            {
+                lock_guard<mutex> lg(map_mtx);
+                if(use_ufm)
+                    insertCloudToSurfelMap(*activeSurfelMap, *cloud);
+                else
                 {
-                    int idx = i*surfel_query_depth + depth;
-                    // CloudCoef[idx].t      = -1;
-                    CloudCoef[idx].ptIdx  = i;
-                    // CloudCoef[idx].f      = Vector3d(pointRaw.x, pointRaw.y, pointRaw.z);
-                    // CloudCoef[idx].fdsk   = Vector3d(pointInB.x, pointInB.y, pointInB.z);
-                    // CloudCoef[idx].finW   = Vector3d(pointInW.x, pointInW.y, pointInW.z);
-                    // CloudCoef[idx].n      = Vector4d(0, 0, 0, 0);
-                    // CloudCoef[idx].u      = -1;
-                    // CloudCoef[idx].plnrty = 0;
+                    if(activeikdtMap->Root_Node == nullptr)
+                        activeikdtMap->Build(cloud->points);
+                    else
+                        activeikdtMap->Add_Points(cloud->points, true);
                 }
             }
         }
+    }
 
-        #pragma omp parallel for num_threads(MAX_THREADS)
-        for(auto &point : CloudDeskewedDS->points)
+    void AssociateCloudWithMap(ufoSurfelMap &Map, ikdtreePtr &activeikdtMap, mytf tf_W_B,
+                               CloudXYZITPtr const &CloudSkewed, CloudXYZIPtr &CloudDeskewedDS,
+                               vector<LidarCoef> &CloudCoef, map<int, int> &stat)
+    {
+        int pointsCount = CloudDeskewedDS->points.size();
+        if (CloudCoef.size() != pointsCount)
         {
-            int i = (int)(point.intensity);
+            // Initialize the coefficent buffer
+            CloudCoef.reserve(pointsCount);
+        }
 
-            for (int depth = 0; depth < surfel_query_depth; depth++)
-            {
-                int idx = i*surfel_query_depth + depth;
-                ROS_ASSERT(i == CloudCoef[idx].ptIdx);
-                CloudCoef[idx].t = -1;
-                CloudCoef[idx].d2P = -1;
-            }
-            
-            // Set default value
-            PointXYZIT pointRaw = CloudSkewed->points[i];
-            PointXYZIT pointInB = CloudDeskewed->points[i];
-            PointXYZIT pointInW = Util::transform_point(tf_W_B, pointInB);
+        // Create a static associator
+        static PointToMapAssoc pma(nh_ptr);
 
-            if(!Util::PointIsValid(pointInB) || pointInB.t < 0)
+        int featureTotal = CloudDeskewedDS->size();
+        #pragma omp parallel for num_threads(MAX_THREADS)
+        for(int k = 0; k < featureTotal; k++)
+        {
+            auto &point = CloudDeskewedDS->points[k];
+            int  point_idx = (int)(point.intensity);
+            int  coeff_idx = k;
+
+            // Reset the coefficient
+            CloudCoef[coeff_idx].t = -1;
+            CloudCoef[coeff_idx].t_ = CloudSkewed->points[point_idx].t;
+            CloudCoef[coeff_idx].d2P = -1;
+            CloudCoef[coeff_idx].ptIdx = point_idx;
+            CloudCoef[coeff_idx].marginalized = false;
+
+            // Set the default value
+            PointXYZIT pointRaw = CloudSkewed->points[point_idx];
+            PointXYZI  pointInB = point;
+            PointXYZI  pointInW = Util::transform_point(tf_W_B, pointInB);
+
+            // Check if the point is valid
+            if(!Util::PointIsValid(pointInB) || pointRaw.t < 0)
             {
                 // printf(KRED "Invalid surf point!: %f, %f, %f\n" RESET, pointInB.x, pointInB.y, pointInB.z);
                 pointInB.x = 0; pointInB.y = 0; pointInB.z = 0; pointInB.intensity = 0;
                 continue;
             }
 
-            // Query the surfel map with predicates
-            namespace ufopred = ufo::map::predicate;
-            auto pred = ufopred::HasSurfel()
-                     && ufopred::DepthMin(surfel_min_depth)
-                     && ufopred::DepthMax(surfel_query_depth - 1)
-                     && ufopred::NumSurfelPointsMin(surfel_min_point)
-                     && ufopred::SurfelPlanarityMin(0.2)    // At this stage, we still search for low planarity surfels to avoid losing track in narrow passages
-                     && ufopred::Intersects(ufo::geometry::Sphere(ufo::map::Point3(pointInW.x, pointInW.y, pointInW.z), surfel_intsect_rad));
+            // // Check if containing node can marginalize the points
+            // auto containPred = ufopred::DepthE(surfel_min_depth)
+            //                 && ufopred::Contains(ufoPoint3(pointInW.x, pointInW.y, pointInW.z));
 
-            vector<int> closest_depth(surfel_query_depth, -1);
-            vector<int> closest_npoints(surfel_query_depth, -1);
-            vector<double> closest_d2pln(surfel_query_depth, -1);
-            vector<double> closest_plnrt(surfel_query_depth, -1);
-            vector<Vector4d> closest_plane(surfel_query_depth, Vector4d(0, 0, 0, 0));
-            vector<Vector3d> closest_eigen(surfel_query_depth, Vector3d(0, 0, 0));
+            // // Find the list of containing node
+            // deque<ufoNode> containingNode;
+            // for (const ufoNode &node : Map.queryBV(containPred))
+            //     containingNode.push_back(node);
 
-            for (auto const &node : Map.query(pred))
+            // // If point has no containing node, consider it a marginalizable points
+            // if (containingNode.size() == 0)
+            // {
+            //     CloudCoef[coeff_idx + surfel_min_depth].marginalized = true;
+            //     CloudCoef[coeff_idx + surfel_min_depth].finW = Vector3d(pointInW.x, pointInW.y, pointInW.z);
+            // }
+            // else
+            // {
+            //     for (const ufoNode &node : containingNode)
+            //     {
+            //         if (Map.getSurfel(containingNode.front()).getNumPoints() < surfel_min_point)
+            //         {
+            //             ROS_ASSERT( node.depth() == surfel_min_depth );
+            //             CloudCoef[coeff_idx + surfel_min_depth].marginalized = true;
+            //             CloudCoef[coeff_idx + surfel_min_depth].finW = Vector3d(pointInW.x, pointInW.y, pointInW.z);
+            //         }
+            //     }
+            // }
+
+            if(use_ufm)
             {
-                auto const& surfel = Map.getSurfel(node);
-
-                double planarity = surfel.getPlanarity();
-                // If node depth is higher than the second level, only admit highly planar ones
-                if (node.depth() > 1 && planarity < surfel_min_plnrty)  // Keeping low planarity surfels in the second level as backup for losing track
-                    continue;
-
-                int depth     = node.depth();
-                int numPoint  = surfel.getNumPoints();
-                Vector3d mean = ufo::math::toEigen(surfel.getMean());
-                Vector3d norm = ufo::math::toEigen(surfel.getNormal());
-                Vector3d eig  = ufo::math::toEigen(surfel.getEigenValues());
-
-                if(planarity < 0 || planarity > 1.0)
-                {
-                    Vector3d sum = ufo::math::toEigen(surfel.getSum());
-                    auto sumSq = surfel.getSumSquares();
-
-                    printf("%sInvalid planarity: %f. Depth: %d. Numpoint: %d. Sum: %f, %f, %f. Sumsq: %f, %f, %f, %f, %f, %f. Eig: %f, %f, %f\n" RESET,
-                           node.depth() == 0 ? KRED : KMAG,
-                           planarity, node.depth(), numPoint,
-                           sum.x(), sum.y(), sum.z(),
-                           sumSq[0], sumSq[1], sumSq[2], sumSq[3], sumSq[4], sumSq[5],
-                           eig(0), eig(1), eig(2)
-                          );
-                    continue;
-                }
-
-                // ROS_ASSERT_MSG(planarity >= 0 && planarity <= 1.0, "plnrty: %f\n", planarity);
-                double d2pln = fabs(norm.dot(Vector3d(pointInW.x, pointInW.y, pointInW.z) - mean));
-
-                if (closest_d2pln[depth] == -1 || d2pln < closest_d2pln[depth])
-                {
-                    closest_depth[depth]   = depth;
-                    closest_npoints[depth] = numPoint;
-                    closest_d2pln[depth]   = d2pln;
-                    closest_plnrt[depth]   = planarity;
-                    closest_eigen[depth]   = eig;
-                    closest_plane[depth]  << norm, -norm.dot(mean);
-                }
+                Vector3d finB(pointInB.x, pointInB.y, pointInB.z);
+                Vector3d finW(pointInW.x, pointInW.y, pointInW.z);
+                pma.AssociatePointWithMap(pointRaw, finB, finW, Map, CloudCoef[coeff_idx]);
             }
-
-            bool point_associated = false;
-            for (int depth = 0; depth < surfel_query_depth; depth++)
+            else
             {
-                // Write down the d2p for the original point
-                if (depth == surfel_min_depth)
-                    CloudCoef[i*surfel_query_depth + depth].d2P = closest_d2pln[depth];
+                int numNbr = surfel_min_point;
+                ikdtPointVec nbrPoints;
+                vector<float> knnSqDis;
+                activeikdtMap->Nearest_Search(pointInW, numNbr, nbrPoints, knnSqDis);
 
-                if (closest_d2pln[depth] > dis_to_surfel_max || closest_d2pln[depth] == -1 || point_associated)
+                if (nbrPoints.size() < numNbr)
                     continue;
-
-                double score = (1 - 0.9 * closest_d2pln[depth] / Util::pointDistance(pointInB))*closest_plnrt[depth];
-
-                // Weightage based on how close the point is to the plane
-                if (score > score_min)
+                else if (knnSqDis[numNbr - 1] > 5.0)
+                    continue;
+                else
                 {
-                    LidarCoef &coef = CloudCoef[i*surfel_query_depth + depth];
-
-                    coef.t      = timeStep.front().start_time + pointRaw.t;
-                    coef.n      = score*closest_plane[depth];
-                    coef.scale  = depth;
-                    coef.surfNp = closest_npoints[depth];
-                    coef.plnrty = closest_plnrt[depth];
-                    coef.d2P    = closest_d2pln[depth];
-                    coef.f      = Vector3d(pointRaw.x, pointRaw.y, pointRaw.z);
-                    coef.fdsk   = Vector3d(pointInB.x, pointInB.y, pointInB.z);
-                    coef.finW   = Vector3d(pointInW.x, pointInW.y, pointInW.z);
-                    
-                    for(auto &seg : timeStep)
+                    Vector4d pabcd;
+                    double rho;
+                    if(Util::fitPlane(nbrPoints, surfel_min_plnrty, dis_to_surfel_max, pabcd, rho))
                     {
-                        if(seg.start_time <= coef.t && coef.t <= seg.final_time)
+                        float d2p = pabcd(0) * pointInW.x + pabcd(1) * pointInW.y + pabcd(2) * pointInW.z + pabcd(3);
+                        float score = (1 - 0.9 * fabs(d2p) / Util::pointDistance(pointInB))*rho;
+                        // float score = 1 - 0.9 * fabs(d2p) / (1 + pow(Util::pointDistance(pointInB), 4));
+                        // float score = 1;
+
+                        if (score > score_min)
                         {
-                            coef.dt = seg.dt();
-                            coef.u  = seg.start_time;
-                            coef.s  = (coef.t - seg.start_time)/seg.dt();
-                            break;
+                            // Add to coeff
+
+                            LidarCoef &coef = CloudCoef[coeff_idx];
+
+                            coef.t      = pointRaw.t;
+                            coef.ptIdx  = point_idx;
+                            coef.n      = pabcd;
+                            coef.scale  = surfel_min_depth;
+                            coef.surfNp = numNbr;
+                            coef.plnrty = score;
+                            coef.d2P    = d2p;
+                            coef.f      = Vector3d(pointRaw.x, pointRaw.y, pointRaw.z);
+                            coef.fdsk   = Vector3d(pointInB.x, pointInB.y, pointInB.z);
+                            coef.finW   = Vector3d(pointInW.x, pointInW.y, pointInW.z);
                         }
                     }
-
-                    point_associated = true;
                 }
             }
         }
 
-        // Copy temp data to the buffer
-        for(int i = 0; i < pointsCount; i++)
+        // Find the statistics of the associations
+        for(int i = 0; i < featureTotal; i++)
         {
-            // // Sort the coefficients by planarity
-            // struct comparePlanarity
-            // {
-            //     bool const operator()(LidarCoef a, LidarCoef b) const
-            //     {
-            //         return (a.plnrty > b.plnrty);
-            //     }
-            // };
-            // std::sort(CloudCoefTemp.begin() + i*surfel_query_depth,
-            //           CloudCoefTemp.begin() + (i+1)*surfel_query_depth, comparePlanarity());
-            
-            for (int depth = 0; depth < surfel_query_depth; depth++)
+            int point_idx = (int)CloudDeskewedDS->points[i].intensity;
+            int coeff_idx = i;
+
+            auto &coef = CloudCoef[coeff_idx];
+            if (coef.t >= 0)
             {
-                auto &coef = CloudCoef[i*surfel_query_depth + depth];
-                if (coef.t >= 0)
-                {
-                    // CloudCoef.push_back(coef);
-                    stat[coef.scale] += 1;
-                    // break;
-                }
+                // CloudCoef.push_back(coef);
+                stat[coef.scale] += 1;
+                // break;
             }
         }
     }
-
+    
     void makeDVAReport(deque<map<int, int>> &stats, map<int, int> &DVA, int &total, string &DVAReport)
     {
         DVA.clear();
@@ -1992,8 +3199,149 @@ public:
             }
         }
         
+        // Calculate the mean and variance of associations at each scale
+        // double N = DVA.size();
+        // double mean = total / N;
+        // double variance = 0;
+        // for(auto &dva : DVA)
+        //     variance += std::pow(dva.second - mean, 2);
+
+        // variance = sqrt(variance/N);
+
+        // // Find the depths with association count within 2 variance
+        // map<int, bool> inlier;
+        // for(auto &dva : DVA)
+        //     inlier[dva.first] = fabs(dva.second - mean) < variance;
+
+        int max_depth = -1;
+        int max_assoc = 0;
         for(auto &dva : DVA)
-            DVAReport += myprintf("[%2d, %6d] ", dva.first, dva.second);
+        {
+            if (dva.second > max_assoc)
+            {
+                max_depth = dva.first;
+                max_assoc = dva.second;
+            }
+        }            
+
+        // Create a report with color code
+        for(auto &dva : DVA)
+            DVAReport += myprintf("%s[%2d, %5d]"RESET, dva.second > max_assoc/3 ? KYEL : KWHT, dva.first, dva.second);
+
+        DVAReport += myprintf(". DM: %2d. MaxA: %d", max_depth, max_assoc);
+    }
+    
+    void FactorSelection(PoseSplineX &traj, vector<ImuIdx> &imuSelected, vector<lidarFeaIdx> &featureSelected)
+    {
+        // Counters for coupling on each knot
+        // vector<int> knot_count_imu(traj.numKnots(), 0);
+        // vector<int> knot_count_ldr(traj.numKnots(), 0);
+
+        // Selecting the imu factors
+        for(int i = 0; i < WINDOW_SIZE; i++)
+        {
+            for(int j = 0; j < N_SUB_SEG; j++)
+            {
+                for(int k = 1; k < SwImuBundle[i][j].size(); k++)
+                {
+                    double sample_time = SwImuBundle[i][j][k].t;
+                    
+                    // Skip if sample time exceeds the bound
+                    if (!traj.TimeIsValid(sample_time, 1e-6))
+                        continue;
+
+                    auto us = traj.computeTIndex(sample_time);
+                    int knot_idx = us.second;
+
+                    // knot_count_imu[knot_idx] += 1;
+                    imuSelected.push_back(ImuIdx(i, j, k));
+                }
+            }
+        }
+
+        // A temporary container of selected features by steps in the sliding window for further downsampling
+        vector<vector<lidarFeaIdx>> featureBySwStep(WINDOW_SIZE);
+
+        // Selecting the lidar factor
+        int total_selected = 0;
+        for (int i = 0; i < WINDOW_SIZE; i++)
+        {
+            for (int k = 0; k < SwCloudDskDS[i]->size(); k++)
+            {
+                // A lot of factors are calculated but only a subset are used for optimization (time constraint).
+                // By adding a counter we can shuffle the factors so all factors have the chance to be used.
+                if ((k + i) % lidar_ds_rate != 0)
+                    continue;
+
+                auto &point = SwCloudDskDS[i]->points[k];
+                int  point_idx = (int)(point.intensity);
+                int  coeff_idx = k;
+
+                LidarCoef &coef = SwLidarCoef[i][coeff_idx];
+
+                if (coef.t < 0)
+                    continue;
+
+                double sample_time = coef.t;
+
+                if (!traj.TimeIsValid(sample_time, 1e-6))
+                    continue;
+
+                auto us = traj.computeTIndex(sample_time);
+                int knot_idx = us.second;
+
+                total_selected++;
+                // knot_count_ldr[knot_idx] += 1;
+                featureBySwStep[i].push_back(lidarFeaIdx(i, k, coef.scale, total_selected));
+            }
+        }
+
+        // If number of lidar feature remain large, randomly select a subset
+        if (total_selected > max_lidar_factor)
+        {
+            // Define Fisher-Yates shuffle lambda function
+            auto fisherYatesShuffle = [](std::vector<int>& array)
+            {
+                std::random_device rd;
+                std::mt19937 gen(rd());
+
+                for (int i = array.size() - 1; i > 0; --i)
+                {
+                    std::uniform_int_distribution<int> distribution(0, i);
+                    int j = distribution(gen);
+                    std::swap(array[i], array[j]);
+                }
+            };
+
+            // How many features each swstep do we need?
+            int maxFeaPerSwStep = ceil(double(max_lidar_factor) / WINDOW_SIZE);
+
+            // Container for shuffled features
+            // vector<vector<lidarFeaIdx>> featureBySwStepShuffled(WINDOW_SIZE);
+            vector<vector<int>> shuffledIdx(WINDOW_SIZE);
+
+            #pragma omp parallel for num_threads(MAX_THREADS)
+            for(int wid = 0; wid < WINDOW_SIZE; wid++)
+            {
+                shuffledIdx[wid] = vector<int>(featureBySwStep[wid].size());
+                std::iota(shuffledIdx[wid].begin(), shuffledIdx[wid].end(), 0);
+                
+                // Shuffle the feature set a few times
+                fisherYatesShuffle(shuffledIdx[wid]);
+                fisherYatesShuffle(shuffledIdx[wid]);
+                fisherYatesShuffle(shuffledIdx[wid]);
+            }
+
+            for(int wid = 0; wid < WINDOW_SIZE; wid++)
+                for(int idx = 0; idx < min(maxFeaPerSwStep, (int)featureBySwStep[wid].size()); idx++)
+                        featureSelected.push_back(featureBySwStep[wid][shuffledIdx[wid][idx]]);
+        }
+        else
+        {
+            for(int wid = 0; wid < WINDOW_SIZE; wid++)
+                for(int idx = 0; idx < featureBySwStep[wid].size(); idx++)
+                    featureSelected.push_back(featureBySwStep[wid][idx]);
+        }
     }
 
     void DetectLoop()
@@ -2015,7 +3363,7 @@ public:
         // Extract the current pose
         int currPoseId = (int)(KfCloudPose->points.back().intensity);
         PointPose currPose = KfCloudPose->points[currPoseId];
-        CloudXYZITPtr currCloudInB(new CloudXYZIT()); CloudXYZITPtr currCloudInW(new CloudXYZIT());
+        CloudXYZIPtr currCloudInB(new CloudXYZI()); CloudXYZIPtr currCloudInW(new CloudXYZI());
         *currCloudInB = *KfCloudinB[currPoseId];
         *currCloudInW = *KfCloudinW[currPoseId];
 
@@ -2028,12 +3376,12 @@ public:
         // Publish the current keyframe
         loopCurrKf->push_back(currPose);
         if (loopCurrKf->size() > 0)
-            Util::publishCloud(loop_currkf_pub, *loopCurrKf, ros::Time(currPose.t), string("world"));
+            Util::publishCloud(loop_currkf_pub, *loopCurrKf, ros::Time(currPose.t), current_ref_frame);
 
         // Find the oldest index in the neigborhood
         int prevPoseId = -1;
         PointPose prevPose;
-        CloudXYZITPtr prevCloudInW(new CloudXYZIT());
+        CloudXYZIPtr prevCloudInW(new CloudXYZI());
 
         for (auto nbr_idx : knn_idx)
         {
@@ -2047,7 +3395,7 @@ public:
 
         // Publish the nbr kf for visualization
         if (loopKfNbr->size() > 0)
-            Util::publishCloud(loop_kf_nbr_pub, *loopKfNbr, ros::Time(currPose.t), string("world"));
+            Util::publishCloud(loop_kf_nbr_pub, *loopKfNbr, ros::Time(currPose.t), current_ref_frame);
 
         static int LAST_KF_COUNT = KfCloudPose->size();
 
@@ -2102,12 +3450,12 @@ public:
 
         // Publish previous keyframe for vizualization
         if (loopPrevKf->size() > 0)
-            Util::publishCloud(loop_prevkf_pub, *loopPrevKf, ros::Time(currPose.t), string("world"));
+            Util::publishCloud(loop_prevkf_pub, *loopPrevKf, ros::Time(currPose.t), current_ref_frame);
 
         // Downsample the pointclouds
-        VoxelGrid<PointXYZIT> downsampler;
+        pcl::UniformSampling<PointXYZI> downsampler;
         double voxel_size = max(leaf_size, 0.4);
-        downsampler.setLeafSize(voxel_size, voxel_size, voxel_size);
+        downsampler.setRadiusSearch(voxel_size);
 
         downsampler.setInputCloud(prevCloudInW);
         downsampler.filter(*prevCloudInW);
@@ -2116,8 +3464,8 @@ public:
         downsampler.filter(*currCloudInB);
 
         // Publish the cloud for visualization
-        Util::publishCloud(loop_prevCloud_pub, *prevCloudInW, ros::Time(currPose.t), string("world"));
-        Util::publishCloud(loop_currCloud_pub, *currCloudInW, ros::Time(currPose.t), string("world"));
+        Util::publishCloud(loop_prevCloud_pub, *prevCloudInW, ros::Time(currPose.t), current_ref_frame);
+        Util::publishCloud(loop_currCloud_pub, *currCloudInW, ros::Time(currPose.t), current_ref_frame);
 
         // Check match by ICP
         myTf tf_W_Bcurr_start = myTf(currPose);
@@ -2151,11 +3499,10 @@ public:
 
         // Publish the transform current cloud
         pcl::transformPointCloud(*currCloudInB, *currCloudInW, tf_W_Bcurr_final.pos, tf_W_Bcurr_final.rot);
-        Util::publishCloud(loop_currCloud_refined_pub, *currCloudInW, ros::Time(currPose.t), string("world"));
-
+        Util::publishCloud(loop_currCloud_refined_pub, *currCloudInW, ros::Time(currPose.t), current_ref_frame);
     }
 
-    bool CheckICP(CloudXYZITPtr &ref_pcl, CloudXYZITPtr &src_pcl, Matrix4f relPosIcpGuess, Matrix4f &relPosIcpEst,
+    bool CheckICP(CloudXYZIPtr &ref_pcl, CloudXYZIPtr &src_pcl, Matrix4f relPosIcpGuess, Matrix4f &relPosIcpEst,
                   double hisKFSearchRadius, int icp_max_iters, double icpFitnessThres, double &icpFitnessRes, double &ICPtime)
     {
 
@@ -2163,7 +3510,7 @@ public:
 
         TicToc tt_icp;
 
-        pcl::IterativeClosestPoint<PointXYZIT, PointXYZIT> icp;
+        pcl::IterativeClosestPoint<PointXYZI, PointXYZI> icp;
         icp.setMaxCorrespondenceDistance(hisKFSearchRadius * 2);
         icp.setMaximumIterations(icp_max_iters);
         icp.setTransformationEpsilon(1e-6);
@@ -2173,7 +3520,7 @@ public:
         icp.setInputSource(src_pcl);
         icp.setInputTarget(ref_pcl);
 
-        CloudXYZITPtr aligned_result(new CloudXYZIT());
+        CloudXYZIPtr aligned_result(new CloudXYZI());
 
         icp.align(*aligned_result, relPosIcpGuess);
 
@@ -2238,24 +3585,41 @@ public:
 
         // Recompute the globalmap and ufomap
         {
-            lock_guard<mutex> lock(global_map_mtx);
+            lock_guard<mutex> lggm(global_map_mtx);
             globalMap->clear();
-            surfelMap.clear();
 
             for(int i = 0; i < KfCloudPose->size(); i++)
                 *globalMap += *KfCloudinW[i];
 
             // Downsample the global map
-            pcl::UniformSampling<PointXYZIT> downsampler;
+            pcl::UniformSampling<PointXYZI> downsampler;
             downsampler.setRadiusSearch(leaf_size);
             downsampler.setInputCloud(globalMap);
             downsampler.filter(*globalMap);
 
-            Util::publishCloud(global_map_pub, *globalMap, ros::Time(KfCloudPose->points.back().t), string("world"));
+            Util::publishCloud(global_map_pub, *globalMap, ros::Time(KfCloudPose->points.back().t), current_ref_frame);
 
+            // Clear the map queu            
+            {
+                lock_guard<mutex> lgmq(mapqueue_mtx);
+                mapqueue.clear();                       // TODO: Should transform the remaining clouds to the new coordinates.
+            }
             // Build the surfelmap
-            insertCloudToSurfelMap(surfelMap, *globalMap);
-            
+            {
+                lock_guard<mutex> lgam(map_mtx);
+
+                if(use_ufm)
+                {
+                    activeSurfelMap->clear();
+                    insertCloudToSurfelMap(*activeSurfelMap, *globalMap);
+                }
+                else
+                {   
+                    activeikdtMap = ikdtreePtr(new ikdtree(0.5, 0.6, leaf_size));
+                    activeikdtMap->Add_Points(globalMap->points, false);
+                }
+            }
+
             // Increment the ufomap version
             ufomap_version++;
         }
@@ -2392,7 +3756,7 @@ public:
         {
             // Set up the loop marker
             loop_marker_inited = true;
-            loop_marker.header.frame_id = "world";
+            loop_marker.header.frame_id = current_ref_frame;
             loop_marker.ns       = "loop_marker";
             loop_marker.type     = visualization_msgs::Marker::LINE_LIST;
             loop_marker.action   = visualization_msgs::Marker::ADD;
@@ -2440,74 +3804,173 @@ public:
 
     void VisualizeSwTraj()
     {
-        // Publish the traj
-        static ros::Publisher swprop_viz_pub = nh_ptr->advertise<nav_msgs::Path>("/swprop_traj", 100);
-        static ros::Publisher lastcloud_pub  = nh_ptr->advertise<sensor_msgs::PointCloud2>("/lastcloud", 100);
-
-        // VisualizeSwTraj(swknots_viz_pub, GlobalTraj, SwTimeStep.front(), SwTimeStep.back(), "world");
-        // VisualizeSwTraj(allknots_viz_pub, GlobalTraj, GlobalTraj->minTime(), SwTimeStep.back(), "world");
-
-        double time_stamp = SwTimeStep.back().back().final_time;
-
-        // Publish the propagated poses
-        nav_msgs::Path prop_path;
-        prop_path.header.frame_id = "world";
-        prop_path.header.stamp = ros::Time(time_stamp);
-        for(int i = 0; i < WINDOW_SIZE; i++)
+        // Publish the sliding window trajectory and log the spline in the world frame
         {
-            for(int j = 0; j < SwPropState[i].size(); j++)
+            // Publish the traj
+            static ros::Publisher swprop_viz_pub = nh_ptr->advertise<nav_msgs::Path>("/swprop_traj", 100);
+            double time_stamp = SwTimeStep.back().back().final_time;
+
+            // Publish the propagated poses
+            nav_msgs::Path prop_path;
+            prop_path.header.frame_id = slam_ref_frame;
+            prop_path.header.stamp = ros::Time(time_stamp);
+            for(int i = 0; i < WINDOW_SIZE; i++)
             {
-                for (int k = 0; k < SwPropState[i][j].size(); k++)
+                for(int j = 0; j < SwPropState[i].size(); j++)
                 {
-                    geometry_msgs::PoseStamped msg;
-                    msg.header.frame_id = "world";
-                    msg.header.stamp = ros::Time(SwPropState[i][j].t[k]);
-                    msg.pose.position.x = SwPropState[i][j].P[k].x();
-                    msg.pose.position.y = SwPropState[i][j].P[k].y();
-                    msg.pose.position.z = SwPropState[i][j].P[k].z();
-                    
-                    prop_path.poses.push_back(msg);
+                    for (int k = 0; k < SwPropState[i][j].size(); k++)
+                    {
+                        geometry_msgs::PoseStamped msg;
+                        msg.header.frame_id = slam_ref_frame;
+                        msg.header.stamp = ros::Time(SwPropState[i][j].t[k]);
+                        
+                        Vector3d pInL0 = SwPropState[i][j].P[k];
+                        msg.pose.position.x = pInL0.x();
+                        msg.pose.position.y = pInL0.y();
+                        msg.pose.position.z = pInL0.z();
+                        
+                        prop_path.poses.push_back(msg);
+
+                        if (i == 0)
+                        {
+                            SE3d pose = GlobalTraj->pose(SwPropState[i][j].t[k]);
+                            Vector3d pos = pose.translation();
+                            Quaternd qua = pose.so3().unit_quaternion();
+                            Vector3d vel = GlobalTraj->transVelWorld(SwPropState[i][j].t[k]);
+                            Vector3d gyr = GlobalTraj->rotVelBody(SwPropState[i][j].t[k]) + sfBig[i][j];
+                            Vector3d acc = qua.inverse()*(GlobalTraj->transAccelWorld(SwPropState[i][j].t[k]) + GRAV) + sfBia[i][j];
+
+                            // swtraj_log << SwPropState[i][j].t[k]
+                            //            << "," << SwPropState[i][j].P[k].x() << "," << SwPropState[i][j].P[k].y() << "," << SwPropState[i][j].P[k].z()
+                            //            << "," << SwPropState[i][j].Q[k].x() << "," << SwPropState[i][j].Q[k].y() << "," << SwPropState[i][j].Q[k].z() << "," << SwPropState[i][j].Q[k].w()
+                            //            << "," << SwPropState[i][j].V[k].x() << "," << SwPropState[i][j].V[k].y() << "," << SwPropState[i][j].V[k].z()
+                            //            << "," << SwPropState[i][j].gyr[k].x() << "," << SwPropState[i][j].gyr[k].y() << "," << SwPropState[i][j].gyr[k].z()
+                            //            << "," << SwPropState[i][j].acc[k].x() << "," << SwPropState[i][j].acc[k].y() << "," << SwPropState[i][j].acc[k].z()
+                            //            << "," << pos.x() << "," << pos.y() << "," << pos.z()
+                            //            << "," << qua.x() << "," << qua.y() << "," << qua.z() << "," << qua.w()
+                            //            << "," << vel.x() << "," << vel.y() << "," << vel.z()
+                            //            << "," << gyr.x() << "," << gyr.y() << "," << gyr.z()
+                            //            << "," << acc.x() << "," << acc.y() << "," << acc.z()
+                            //            << endl;
+                        }
+                    }
                 }
             }
+            // swtraj_log.close();
+            swprop_viz_pub.publish(prop_path);
         }
-        swprop_viz_pub.publish(prop_path);
 
+        // Publish the control points
+        {
+            static ros::Publisher sw_ctr_pose_viz_pub = nh_ptr->advertise<nav_msgs::Path>("/sw_ctr_pose", 100);
+            
+            double SwTstart = SwTimeStep.front().front().start_time;
+            double SwTfinal = SwTimeStep.front().front().final_time;
+
+            double SwDur = SwTfinal - SwTstart;
+
+            nav_msgs::Path path;
+            path.header.frame_id = slam_ref_frame;
+            path.header.stamp = ros::Time(SwTfinal);
+
+            for(int knot_idx = GlobalTraj->numKnots() - 1; knot_idx >= 0; knot_idx--)
+            {
+                double tknot = GlobalTraj->getKnotTime(knot_idx);
+                if (tknot < SwTstart - 2*SwDur )
+                    break;
+
+                Vector3d pos = GlobalTraj->getKnotPos(knot_idx);
+                geometry_msgs::PoseStamped msg;
+                msg.header.frame_id = slam_ref_frame;
+                msg.header.stamp = ros::Time(tknot);
+                
+                msg.pose.position.x = pos.x();
+                msg.pose.position.y = pos.y();
+                msg.pose.position.z = pos.z();
+                
+                path.poses.push_back(msg);
+            }
+
+            sw_ctr_pose_viz_pub.publish(path);
+        }
+
+        // Publishing odometry stuff
+        static myTf tf_Lprior_L0_init;
+        {
+            static bool one_shot = true;
+            if (one_shot)
+            {
+                // Get the init transform
+                vector<double> T_W_B_ = {1, 0, 0, 0,
+                                         0, 1, 0, 0,
+                                         0, 0, 1, 0,
+                                         0, 0, 0, 1};
+                nh_ptr->getParam("/T_M_W_init", T_W_B_);
+                Matrix4d T_B_V = Matrix<double, 4, 4, RowMajor>(&T_W_B_[0]);
+                tf_Lprior_L0_init = myTf(T_B_V);
+                
+                one_shot = false;
+            }
+        }
+
+        // Stuff in world frame
+        static ros::Publisher opt_odom_pub           = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom", 100);
+        static ros::Publisher opt_odom_high_freq_pub = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom_high_freq", 100);
+        static ros::Publisher lastcloud_pub          = nh_ptr->advertise<sensor_msgs::PointCloud2>("/lastcloud", 100);
+        // Stuff in map frame
+        static ros::Publisher opt_odom_inM_pub       = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom_inM", 100);
+    
         // Publish the odom
-        static ros::Publisher opt_odom_pub = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom", 100);
+        PublishOdom(opt_odom_pub, sfPos.back().back(), sfQua.back().back(),
+                    sfVel.back().back(), SwPropState.back().back().gyr.back(), SwPropState.back().back().acc.back(),
+                    sfBig.back().back(), sfBia.back().back(), ros::Time(SwTimeStep.back().back().final_time), slam_ref_frame);
 
-        nav_msgs::Odometry odom_msg;
-        odom_msg.header.stamp = ros::Time(time_stamp);
-        odom_msg.header.frame_id = "world";
-        odom_msg.child_frame_id  = "body";
+        // Publish the odom at sub segment ends
+        for(int i = 0; i < N_SUB_SEG; i++)
+        {
+            double time_stamp = SwTimeStep.front()[i].final_time;
+            PublishOdom(opt_odom_high_freq_pub, sfPos.front()[i], sfQua.front()[i],
+                        sfVel.front()[i], SwPropState.front()[i].gyr.back(), SwPropState.front()[i].acc.back(),
+                        sfBig.front()[i], sfBia.front()[i], ros::Time(time_stamp), slam_ref_frame);
+        }
 
-        odom_msg.pose.pose.position.x = sfPos.back().back().x();
-        odom_msg.pose.pose.position.y = sfPos.back().back().y();
-        odom_msg.pose.pose.position.z = sfPos.back().back().z();
-
-        odom_msg.pose.pose.orientation.x = sfQua.back().back().x();
-        odom_msg.pose.pose.orientation.y = sfQua.back().back().y();
-        odom_msg.pose.pose.orientation.z = sfQua.back().back().z();
-        odom_msg.pose.pose.orientation.w = sfQua.back().back().w();
-
-        opt_odom_pub.publish(odom_msg);
-
-        // Publish the latest cloud transformed
-        CloudXYZITPtr latestCloud(new CloudXYZIT());
+        // Publish the latest cloud
+        CloudXYZIPtr latestCloud(new CloudXYZI());
         pcl::transformPointCloud(*SwCloudDsk.back(), *latestCloud, sfPos.back().back(), sfQua.back().back());
-        Util::publishCloud(lastcloud_pub, *latestCloud, ros::Time(time_stamp), string("world"));
+        Util::publishCloud(lastcloud_pub, *latestCloud, ros::Time(SwTimeStep.back().back().final_time), slam_ref_frame);
+        
+        // Publish pose in map frame by the initial pose guess
+        Vector3d posInM = tf_Lprior_L0_init*sfPos.back().back();
+        Quaternd quaInM = tf_Lprior_L0_init.rot*sfQua.back().back();
+        Vector3d velInM = tf_Lprior_L0_init.rot*sfVel.back().back();  
+        PublishOdom(opt_odom_inM_pub, posInM, quaInM,
+                    velInM, SwPropState.back().back().gyr.back(), SwPropState.back().back().acc.back(),
+                    sfBig.back().back(), sfBia.back().back(), ros::Time(SwTimeStep.back().back().final_time), "map");
 
-        // Publish the transform
-        static tf::TransformBroadcaster br;
-        tf::Transform transform;
-        transform.setOrigin(tf::Vector3(odom_msg.pose.pose.position.x,
-                                        odom_msg.pose.pose.position.y,
-                                        odom_msg.pose.pose.position.z));
-        tf::Quaternion q(odom_msg.pose.pose.orientation.x,
-                         odom_msg.pose.pose.orientation.y,
-                         odom_msg.pose.pose.orientation.z,
-                         odom_msg.pose.pose.orientation.w);
-        transform.setRotation(q);
-        br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "body"));
+        // Publish the transform between map and world at low rate
+        {
+            // static double update_time = -1;
+            // if (update_time == -1 || ros::Time::now().toSec() - update_time > 1.0)
+            static bool oneshot = true;
+            if(oneshot)
+            {
+                oneshot = false;
+                // update_time = ros::Time::now().toSec();
+                static tf2_ros::StaticTransformBroadcaster static_broadcaster;
+                geometry_msgs::TransformStamped rostf_M_W;
+                rostf_M_W.header.stamp            = ros::Time::now();
+                rostf_M_W.header.frame_id         = "map";
+                rostf_M_W.child_frame_id          = slam_ref_frame;
+                rostf_M_W.transform.translation.x = tf_Lprior_L0_init.pos.x();
+                rostf_M_W.transform.translation.y = tf_Lprior_L0_init.pos.y();
+                rostf_M_W.transform.translation.z = tf_Lprior_L0_init.pos.z();
+                rostf_M_W.transform.rotation.x    = tf_Lprior_L0_init.rot.x();
+                rostf_M_W.transform.rotation.y    = tf_Lprior_L0_init.rot.y();
+                rostf_M_W.transform.rotation.z    = tf_Lprior_L0_init.rot.z();
+                rostf_M_W.transform.rotation.w    = tf_Lprior_L0_init.rot.w();
+                static_broadcaster.sendTransform(rostf_M_W);
+            }
+        }
     }
 
     void SlideWindowForward()
@@ -2542,7 +4005,7 @@ public:
         SaveTrajLog();
 
         // Publish the full map
-        Util::publishCloud(global_map_pub, *globalMap, ros::Time(KfCloudPose->points.back().t), string("world"));
+        Util::publishCloud(global_map_pub, *globalMap, ros::Time(KfCloudPose->points.back().t), current_ref_frame);
 
         res.result = 1;
         return true;
@@ -2550,12 +4013,131 @@ public:
 
     void SaveTrajLog()
     {
-        printf(KYEL "Logging the map start ...\n" RESET);
-
         printf("Logging cloud pose: %s.\n", (log_dir + "/KfCloudPose.pcd").c_str());
-        PCDWriter writer; writer.writeASCII(log_dir + "/KfCloudPose.pcd", *KfCloudPose, 18); 
+        
+        int save_attempts = 0;
+        int save_attempts_max = 50;
+        CloudPose cloudTemp;
+        PCDWriter writer;
+
+        save_attempts = 0;
+        writer.write<PointPose>(log_dir + "/KfCloudPoseBin.pcd", *KfCloudPose, 18);
+        while (true)
+        {
+            writer.write(log_dir + "/KfCloudPoseBin.pcd", *KfCloudPose, 18);
+            save_attempts++;
+
+            bool saving_succeeded = false;
+            if(pcl::io::loadPCDFile<PointPose>(log_dir + "/KfCloudPoseBin.pcd", cloudTemp) == 0)
+            {
+                if (cloudTemp.size() == KfCloudPose->size())
+                    saving_succeeded = true;
+            }
+            
+            if (saving_succeeded)
+                break;
+            else if (save_attempts > save_attempts_max)
+            {
+                printf(KRED "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d!. Giving up \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+                break;
+
+            }
+            else
+            {
+                printf(KYEL "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+            }
+        }
+
+        save_attempts = 0;
+        writer.writeASCII<PointPose>(log_dir + "/KfCloudPose.pcd", *KfCloudPose, 18);
+        while (true)
+        {
+            writer.writeASCII<PointPose>(log_dir + "/KfCloudPose.pcd", *KfCloudPose, 18);
+            save_attempts++;
+
+            bool saving_succeeded = false;
+            if(pcl::io::loadPCDFile<PointPose>(log_dir + "/KfCloudPose.pcd", cloudTemp) == 0)
+            {
+                if (cloudTemp.size() == KfCloudPose->size())
+                    saving_succeeded = true;
+            }
+            
+            if (saving_succeeded)
+                break;
+            else if (save_attempts > save_attempts_max)
+            {
+                printf(KRED "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d!. Giving up \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+                break;
+
+            }
+            else
+            {
+                printf(KYEL "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+            }
+        }
+
+        save_attempts = 0;
+        writer.writeASCII<PointPose>(log_dir + "/KfCloudPoseExtra.pcd", *KfCloudPose, 18);
+        while (true)
+        {
+            writer.writeASCII<PointPose>(log_dir + "/KfCloudPoseExtra.pcd", *KfCloudPose, 18);
+            save_attempts++;
+
+            bool saving_succeeded = false;
+            if(pcl::io::loadPCDFile<PointPose>(log_dir + "/KfCloudPoseExtra.pcd", cloudTemp) == 0)
+            {
+                if (cloudTemp.size() == KfCloudPose->size())
+                    saving_succeeded = true;
+            }
+            
+            if (saving_succeeded)
+                break;
+            else if (save_attempts > save_attempts_max)
+            {
+                printf(KRED "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d!. Giving up \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+                break;
+
+            }
+            else
+            {
+                printf(KYEL "Saving failed!. Saved %5d vs %5d. Retry %2d / %2d \n" RESET,
+                            cloudTemp.size(), KfCloudPose->size(), save_attempts, save_attempts_max );
+            }
+        }
 
         printf(KGRN "Logging the map completed.\n" RESET);
+
+
+        printf(KYEL "Logging the map start ...\n" RESET);
+
+        {
+            lock_guard<mutex> lock(global_map_mtx);
+
+            pcl::UniformSampling<PointXYZI> downsampler;
+            downsampler.setRadiusSearch(max(leaf_size, 0.2));
+            downsampler.setInputCloud(globalMap);
+            downsampler.filter(*globalMap);
+
+            printf("Logging global map: %s.\n", (log_dir + "/globalMap.pcd").c_str());
+            pcl::io::savePCDFileBinary(log_dir + "/globalMap.pcd", *globalMap);
+
+            #pragma omp parallel for num_threads(MAX_THREADS)
+            for(int i = 0; i < KfCloudinW.size(); i++)
+            {
+                string file_name = log_dir_kf + "/KfCloudinW_" + zeroPaddedString(i, KfCloudinW.size()) + ".pcd";
+                
+                // printf("Logging KF cloud %s.\n", file_name.c_str());
+                pcl::io::savePCDFileBinary(file_name, *KfCloudinW[i]);
+            }
+        }
+
+        printf(KGRN "Logging the map completed.\n" RESET);
+
 
         printf(KYEL "Logging the loop ...\n" RESET);
 
@@ -2581,6 +4163,89 @@ public:
         loop_log_file.close();
 
         printf(KGRN "Logging the loop completed.\n" RESET);
+
+
+        printf(KYEL "Logging the spline.\n" RESET);
+
+        LogSpline(log_dir + "/spline_log.csv", *GlobalTraj, 0);
+
+        printf(KYEL "Logging the spline completed.\n" RESET);
+
+    }
+
+    void LogSpline(string filename, PoseSplineX &traj, int outer_iteration)
+    {
+        std::ofstream spline_log_file;
+
+        // Sample the spline from start to end
+        spline_log_file.open(filename);
+        spline_log_file.precision(std::numeric_limits<double>::digits10 + 1);
+
+        // First row gives some metrics
+        spline_log_file
+                << "Dt: "         << traj.getDt()
+                << ", Order: "    << SPLINE_N
+                << ", Knots: "    << traj.numKnots()
+                << ", MinTime: "  << traj.minTime()
+                << ", MaxTime: "  << traj.maxTime()
+                << ", OtrItr: "   << outer_iteration
+                << endl;
+
+        // Logging the knots
+        for(int i = 0; i < traj.numKnots(); i++)
+        {
+            auto pose = traj.getKnot(i);
+            auto pos = pose.translation(); auto rot = pose.so3().unit_quaternion();
+
+            spline_log_file << i << ","
+                            << traj.getKnotTime(i) << ","            
+                            << pos.x() << "," << pos.y() << "," << pos.z() << ","
+                            << rot.x() << "," << rot.y() << "," << rot.z() << "," << rot.w()
+                            << endl;
+        }
+
+        spline_log_file.close();
+
+    }
+
+    void PublishOdom(ros::Publisher &pub, Vector3d &pos, Quaternd &qua,
+                     Vector3d &vel, Vector3d &gyr, Vector3d &acc,
+                     Vector3d &bg, Vector3d &ba, ros::Time stamp, string frame)
+    {
+        nav_msgs::Odometry odom_msg;
+        odom_msg.header.stamp = stamp;
+        odom_msg.header.frame_id = frame;
+        odom_msg.child_frame_id  = "body";
+
+        odom_msg.pose.pose.position.x = pos.x();
+        odom_msg.pose.pose.position.y = pos.y();
+        odom_msg.pose.pose.position.z = pos.z();
+
+        odom_msg.pose.pose.orientation.x = qua.x();
+        odom_msg.pose.pose.orientation.y = qua.y();
+        odom_msg.pose.pose.orientation.z = qua.z();
+        odom_msg.pose.pose.orientation.w = qua.w();
+
+        odom_msg.twist.twist.linear.x = vel.x();
+        odom_msg.twist.twist.linear.y = vel.y();
+        odom_msg.twist.twist.linear.z = vel.z();
+
+        odom_msg.twist.twist.angular.x = gyr.x();
+        odom_msg.twist.twist.angular.y = gyr.y();
+        odom_msg.twist.twist.angular.z = gyr.z();
+
+        odom_msg.twist.covariance[0] = acc.x();
+        odom_msg.twist.covariance[1] = acc.y();
+        odom_msg.twist.covariance[2] = acc.z();
+
+        odom_msg.twist.covariance[3] = bg.x();
+        odom_msg.twist.covariance[4] = bg.y();
+        odom_msg.twist.covariance[5] = bg.z();
+        odom_msg.twist.covariance[6] = ba.x();
+        odom_msg.twist.covariance[7] = ba.y();
+        odom_msg.twist.covariance[8] = ba.z();
+
+        pub.publish(odom_msg);
     }
 };
 
@@ -2594,7 +4259,7 @@ int main(int argc, char **argv)
 
     Estimator estimator(nh_ptr);
 
-    thread process_data(&Estimator::ProcessData, &estimator); // For processing the image
+    thread process_data(&Estimator::ProcessData, &estimator);
 
     ros::MultiThreadedSpinner spinner(0);
     spinner.spin();

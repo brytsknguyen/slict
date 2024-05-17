@@ -1,0 +1,44 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun" default="0"/>
+      <arg name="loop_en" default="1"/>
+
+      <!-- Dataset from CLINS -->
+      
+      <!-- Downloaded from clins gg drive https://drive.google.com/drive/folders/17OVuXPaoZQ-xYqHJDlfAlfqoDUkqOq6o -->
+      <arg  name="bag_file" default="/home/tmn/DATASETS/yq-skg-around.bag"/> <arg name="start_time" default="0.0"/>
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/clins_data"/>
+
+      <!-- Load the param -->
+      <rosparam file="$(find slict)/config/clins_data.yaml" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the velodyne to ouster converter -->
+      <node pkg="slict" type="slict_velodyne_to_ouster" name="slict_velodyne_to_ouster" respawn="false" output="log" required="true"/>
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log" required="true"/>
+
+      <!-- Run the Estimator -->
+      <node pkg="slict" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
+            args="-d $(find slict)/launch/clins_data.rviz" />
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s $(arg start_time)"
+            launch-prefix="bash -c 'sleep 1; $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

@@ -1,0 +1,191 @@
+# To inform the algorithm to exit automatically when no data is received
+autoexit:           1
+
+# Declare the lidar topics to merge
+lidar_topic:        [
+                      "/os_cloud_node/points"
+                    ]
+
+merged_lidar_topic: "/merged_pc"
+
+# Lidar extrinsics: Transform of coordinates in lidar's frame to body
+# NOTE TO USER: The (4,4) entry of the extrinsics is used to declare
+# whether stamp is at beginning (1.000) or end (0.000) of scan
+lidar_extr:         [
+                      # Hesai
+                      0.0,  -1.0,   0.0,   0.082,
+                     -1.0,   0.0,   0.0,   0.052,
+                      0.0,   0.0,  -1.0,  -0.026,
+                      0.0,   0.0,   0.0,   1.000
+                    ]
+
+# Minimum lidar range to admit
+min_range:          1.0
+
+# IMU topic
+imu_topic:          "/vn100/imu"
+
+# Imu data will be multiplied with this to get m/s^2
+acce_scale:         1.00
+
+# Gravity constant
+GRAV:               9.82
+
+# IMU noises
+GYR_N:              20
+GYR_W:              5
+ACC_N:              1
+ACC_W:              5
+
+# Position prior weight
+POSE_N:             10
+
+# Noise of velocity propagation
+VEL_N:              10
+
+# Weightage of a basic lidar factor
+lidar_weight:       20
+
+# Bias bounds
+BG_BOUND:           [ 0.2,  0.2,  0.3]
+BA_BOUND:           [ 0.2,  0.2,  0.4]
+
+# Number of packets to process at time
+WINDOW_SIZE:        3
+# Number of substates to give to each packet
+N_SUB_SEG:          16
+# Spline order
+SPLINE_N:           4
+# Knot length
+deltaT:             0.1
+# Period at the beginning of the spline to fix
+start_fix_span:    -0.0
+# Period at the end of the spline to fix
+final_fix_span:    -1.0
+# Steps to reassociate
+reassociate_steps:  1
+# Deskew choice, 0 for IMU prop, 1 for SPLINE, 1 for before and 1 for after
+deskew_method:      [ 0, 0 ]
+# Rate of doing reassociation
+reassoc_rate:       1
+
+# Downsampling grid size, chose -1 for no downsampling
+leaf_size:          0.1           # Downsample scale of input pointcloud, also the scale of ufomap leaf
+assoc_spacing:      0.8
+surfel_map_depth:   16
+surfel_min_point:   8
+surfel_min_depth:   1
+surfel_query_depth: 4             # Equal to Dmax + 1. Dmax is defined in the paper
+surfel_intsect_rad: 0.2           # r in the the paper
+surfel_min_plnrty:  0.6
+
+# Distance to surfel and min score thresholds
+dis_to_surfel_max:  0.3
+score_min:          0.0
+
+# Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
+ds_rate:            [
+                      1
+                    ]
+
+# Number of pointclouds to merge into one
+sweep_len:          2
+
+# Threshold to add new keyframe
+kf_min_dis:         2.0
+kf_min_angle:       20
+refine_kf:          0
+
+# Optimization parameters
+lidar_loss_thres:   10.0
+imu_loss_thres:    -1.0
+
+# Solver:
+# Linear solver: "dnc" "snc" "cgnr" "dschur" "sschur" "ischur"
+linSolver:          "snc"
+# Trust region strategy: "lm", "dogleg"
+trustRegType:       "lm"
+# Linear Algebra library used: "eigen", "lapack", "cuda"
+linAlgbLib:         "eigen"
+max_solve_time:     0.3
+max_iterations:     30
+ensure_real_time:   1
+find_factor_cost:   0
+fit_spline:         0
+
+# Sensors fused
+fuse_lidar:         1
+fuse_imu:           1
+fuse_poseprop:      1
+fuse_velprop:       0
+
+regularize_imu:     1
+imu_init_time:      0.5
+max_outer_iters:    1
+max_lidar_factor:   4000  # Maximum number of lidar factors
+
+# Loop closure parameters
+loop_en:            1
+loop_kf_nbr:        20    # Number of neighbour to check for loop closure
+loop_kfid_mindiff:  20    # Only check for loop when keyframes have this much difference
+
+icpMaxIter:         100   # Maximum iterations for ICP
+icpFitnessThres:    0.6   # Fitness threshold for ICP check
+histDis:            15    # Maximum correspondence distance for icp
+
+# Bundle adjustment params
+rib_edge:           100
+odom_q_noise:       0.1
+odom_p_noise:       0.1
+loop_weight:        0.05
+
+# Number of optimizations before quitting
+publish_map:        0
+
+# Log directory
+log_dir:            "/home/tmn/slict_log/atv"
+
+# Configurations for relocalization
+relocalization:
+
+  # pre process
+  ds_size:                    0.25
+  maximum_corner_num:         100
+
+  # key points
+  plane_detection_thre:       0.01
+  plane_merge_normal_thre:    0.2
+  voxel_size:                 2.0
+  voxel_init_num:             10
+  proj_image_resolution:      0.5
+  proj_dis_min:               0
+  proj_dis_max:               5
+  corner_thre:                10
+
+  # std descriptor
+  descriptor_near_num:        10
+  descriptor_min_len:         2
+  descriptor_max_len:         50
+  non_max_suppression_radius: 2
+  std_side_resolution:        0.2
+
+  # candidate search
+  skip_near_num:              100
+  candidate_num:              50
+  sub_frame_num:              1
+  vertex_diff_threshold:      0.5
+  rough_dis_threshold:        0.05
+  normal_threshold:           0.2
+  dis_threshold:              0.5
+  icp_threshold:              0.4
+
+  # Number of keyframe to merge for each reloc check
+  kf_merged:                  1
+  # For guestimation filtering
+  refine_reloc_tf:            1
+  reloc_thres:                2
+  reloc_timespan:            -1.0
+  pose_percentile_thres:      0.7
+  priormap_viz_res:           0.2
+  marginalize_new_points:     0
+  ioa_max_iter:               20

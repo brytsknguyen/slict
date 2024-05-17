@@ -35,7 +35,7 @@ find_package(ufomap REQUIRED)
 ## Find 3rd-party packages and libraries
 find_package(OpenMP REQUIRED)
 find_package(PCL REQUIRED)
-# find_package(OpenCV REQUIRED)
+# find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 
@@ -46,6 +46,7 @@ add_message_files(
   FeatureCloud.msg
   # KeyFrameData.msg
   OptStat.msg
+  TimeLog.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -87,7 +88,7 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS 
+  CATKIN_DEPENDS
   std_msgs
   nav_msgs
   geometry_msgs
@@ -103,6 +104,7 @@ catkin_package(
 # Include directories
 include_directories(
 	include
+  include/ikdTree
 	${catkin_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
   # ${OpenCV_INCLUDE_DIRS}
@@ -112,59 +114,56 @@ include_directories(
 
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME} src/${PROJECT_NAME}/slict.cpp )
 
-# Declare executable
-add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp)
+# Main LIO
+add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/mySolver.cpp src/PointToMapAssoc.cpp)
 add_dependencies(${PROJECT_NAME}_estimator ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES}
-                                                ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
-
+target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Synchronizer for lidar and IMU
 add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
 add_dependencies(${PROJECT_NAME}_sensorsync ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_sensorsync ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                 ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+target_link_libraries(${PROJECT_NAME}_sensorsync ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# IMU prediction
+add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
+add_dependencies(${PROJECT_NAME}_imu_odom ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_compile_options(${PROJECT_NAME}_imu_odom PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_imu_odom ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
 
-add_executable(${PROJECT_NAME}_velodyne_to_ouster src/VelodyneToOuster.cpp)
+# Converter of different lidar formats to ouster
+# Velodyne
+add_executable(${PROJECT_NAME}_velodyne_to_ouster src/lidar_converters/VelodyneToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_velodyne_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_velodyne_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_velodyne_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                         ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
-
-add_executable(${PROJECT_NAME}_livox_to_ouster src/LivoxToOuster.cpp)
+target_link_libraries(${PROJECT_NAME}_velodyne_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Livox avia, mid-70
+add_executable(${PROJECT_NAME}_livox_to_ouster src/lidar_converters/LivoxToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_livox_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_livox_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_livox_to_ouster ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES}
-                                                      ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
-
-add_executable(${PROJECT_NAME}_livox2_to_ouster src/Livox2ToOuster.cpp)
+target_link_libraries(${PROJECT_NAME}_livox_to_ouster ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Livox mid-360
+add_executable(${PROJECT_NAME}_livox2_to_ouster src/lidar_converters/Livox2ToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_livox2_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_livox2_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_livox2_to_ouster ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES}
-                                                       ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
-
-add_executable(${PROJECT_NAME}_hesai_to_ouster src/HesaiToOuster.cpp)
+target_link_libraries(${PROJECT_NAME}_livox2_to_ouster ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Hesai
+add_executable(${PROJECT_NAME}_hesai_to_ouster src/lidar_converters/HesaiToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_hesai_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_hesai_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_hesai_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                          ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS})
- 
-add_executable(${PROJECT_NAME}_bpearl_to_ouster src/BPearlToOuster.cpp)
+target_link_libraries(${PROJECT_NAME}_hesai_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Bpearl
+add_executable(${PROJECT_NAME}_bpearl_to_ouster src/lidar_converters/BPearlToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_bpearl_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_bpearl_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_bpearl_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                       ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS})
-                                                          
-add_executable(${PROJECT_NAME}_m2dgr_to_ouster src/M2DGRToOuster.cpp)
+target_link_libraries(${PROJECT_NAME}_bpearl_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Mulran dataset
+add_executable(${PROJECT_NAME}_mulran_to_ouster src/lidar_converters/MulranToOuster.cpp)
+add_dependencies(${PROJECT_NAME}_mulran_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_compile_options(${PROJECT_NAME}_mulran_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_mulran_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# M2dgr dataset
+add_executable(${PROJECT_NAME}_m2dgr_to_ouster src/lidar_converters/M2DGRToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_m2dgr_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_m2dgr_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_m2dgr_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                      ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
-
-add_executable(${PROJECT_NAME}_merge_lidar src/MergeLidar.cpp)
-add_dependencies(${PROJECT_NAME}_merge_lidar ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-target_compile_options(${PROJECT_NAME}_merge_lidar PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_merge_lidar ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES}
-                                                  ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_m2dgr_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)

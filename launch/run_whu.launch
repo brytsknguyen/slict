@@ -1,0 +1,53 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun" default="0"/>
+      <arg name="loop_en" default="0"/>
+
+      <!-- whu dataset, downloadable at whu.github.io. -->
+      
+      <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/WHU/"/>
+
+      <arg  name="bag_file"  default="$(arg data_path)/whu_3.2/*.bag"/>
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/whu_3.3/*.bag"/> -->
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/whu"/>
+
+      <!-- Start time -->
+      <arg name="start_time" value="450" if="$(eval '3.2' in bag_file)"/>
+      <arg name="start_time" value="350" if="$(eval '3.3' in bag_file)"/>
+
+      <!-- Load the param -->
+      <rosparam file="$(find slict)/config/whu.yaml" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the livox to ouster converter -->
+      <node pkg="slict" required="true" type="slict_livox_to_ouster" name="slict_livox_to_ouster" respawn="false" output="log"/>
+
+      <!-- Run the imu converter -->
+      <node pkg="fixwhuimu" required="true" type="fixwhuimu" name="fixwhuimu" respawn="false" output="log"/>
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
+
+      <!-- Run the Estimator -->
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
+            args="-d $(find slict)/launch/whu.rviz" />
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s $(arg start_time)"
+            launch-prefix="bash -c 'sleep 1; $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

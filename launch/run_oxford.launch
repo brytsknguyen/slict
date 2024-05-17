@@ -6,17 +6,26 @@
 
       <!-- Oxford Newer College Dataset. Downloadable at https://ori-drs.github.io/newer-college-dataset/ -->
       
-      <arg name="data_path" default="/media/tmn/mySataSSD1/NewerCollegeDataset/"/>
+      <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/NewerCollegeDataset/"/>
 
       <!-- <arg  name="bag_file" default="$(arg data_path)/01_short_experiment/01_short_experiment.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/02_long_experiment/02_long_experiment.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/05_quad_with_dynamics/05_quad_with_dynamics.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/06_dynamic_spinning/06_dynamic_spinning.bag"/> -->
       <arg  name="bag_file" default="$(arg data_path)/07_parkland_mound/07_parkland_mound.bag"/>
+      
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="0"/>
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
       <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/oxford"/>
 
+      <!-- Priormap file -->
+      <arg name="prior_map_dir" default=""/>
+      
+      <!-- STD descriptor for relocalization -->
+      <arg name="descriptor_path" default=""/>
+      
       <!-- Load the param -->
       <rosparam file="$(find slict)/config/oxford.yaml" command="load"/>
       <!-- Set some exp related params -->
@@ -25,10 +34,22 @@
       <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
 
       <!-- Run the sensor sync -->
-      <node pkg="slict" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log" required="true"/>
+      <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
+
+      <!-- Run the relocalization -->
+      <node if="$(eval use_prior_map > 0)" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+            <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node>
 
       <!-- Run the Estimator -->
+      <param name="/prior_map_dir"  type="string" value="$(arg prior_map_dir)" />
+      <param name="/use_prior_map"  type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report"    type="int"    value="1"/>
+      <param name="/slam_ref_frame" type="string" value="odom"/>
       <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+
+      <!-- Run the imu predictor -->
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
 
       <!--- Run Rviz-->
       <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
@@ -36,10 +57,10 @@
 
       <!-- Play the bag file -->
       <param name="/use_sim_time" value="false" />
-
+      <arg name="wait_time" value="$(eval use_prior_map*10 + 1)" />
       <node required="false" pkg="rosbag" type="play" name="rosbag_player"
-            args="$(arg publish_clock) $(arg bag_file) -r 1.0 "
-            launch-prefix="bash -c 'sleep 1; $0 $@' "/>
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s 0.0"
+            launch-prefix="bash -c 'sleep $(arg wait_time); $0 $@' "/>
 
       <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
 

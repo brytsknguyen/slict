@@ -1,5 +1,5 @@
 /**
- * This file is part of SLICT.
+ * This file is part of slict.
  *
  * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.npn at ieee dot org>,
  * Division of RPL, KTH Royal Institute of Technology
@@ -9,80 +9,27 @@
  * If you use this code, please cite the respective publications as
  * listed on the above websites.
  *
- * SLICT is free software: you can redistribute it and/or modify
+ * slict is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * SLICT is distributed in the hope that it will be useful,
+ * slict is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
+ * along with slict.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 //
 // Created by Thien-Minh Nguyen on 01/08/22.
 //
 
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-// #include <pcl/kdtree/kdtree_flann.h>
-// #include <pcl/registration/icp.h>
-// #include <pcl/io/pcd_io.h>
-#include <pcl_conversions/pcl_conversions.h>
+#include "utility.h"
 
-struct PointBPearl
-{
-    PCL_ADD_POINT4D
-    float intensity;
-    uint16_t ring;                   ///< laser ring number
-    double timestamp;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-} EIGEN_ALIGN16;
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointBPearl,
-                                 (float, x, x) (float, y, y) (float, z, z)
-                                 (float, intensity, intensity)
-                                 (double, timestamp, timestamp)
-                                 (uint16_t, ring, ring))
-
-struct PointOuster
-{
-    PCL_ADD_POINT4D;
-    float intensity;
-    uint32_t t;
-    uint16_t reflectivity;
-    uint8_t  ring;
-    // uint16_t ambient; // Available in NTU VIRAL and multicampus datasets
-    uint32_t range;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-} EIGEN_ALIGN16;
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointOuster,
-                                 (float, x, x) (float, y, y) (float, z, z)
-                                 (float, intensity, intensity)
-                                 (uint32_t, t, t)
-                                 (uint16_t, reflectivity, reflectivity)
-                                 (uint8_t,  ring, ring)
-                                //  (uint16_t, ambient, ambient)
-                                 (uint32_t, range, range))
-
-typedef pcl::PointCloud<PointOuster> CloudOuster;
-
-template <typename PointType>
-sensor_msgs::PointCloud2 publishCloud(ros::Publisher &thisPub,
-                                        pcl::PointCloud<PointType> &thisCloud,
-                                        ros::Time thisStamp, std::string thisFrame)
-{
-    sensor_msgs::PointCloud2 tempCloud;
-    pcl::toROSMsg(thisCloud, tempCloud);
-    tempCloud.header.stamp = thisStamp;
-    tempCloud.header.frame_id = thisFrame;
-    // if (thisPub.getNumSubscribers() != 0)
-        thisPub.publish(tempCloud);
-    return tempCloud;
-}
+// const int queueLength = 2000;
 
 using namespace std;
 using namespace Eigen;
@@ -122,10 +69,14 @@ public:
 
         static double hsToOusterIntensity = 1500.0/255.0;
 
-        #pragma omp parallel for num_threads(omp_get_max_threads())
+        #pragma omp parallel for num_threads(MAX_THREADS)
         // double max_intensity = -1;
         for (size_t i = 0; i < cloudsize; i++)
         {
+            // printf("Scan start %f. Scan end: %f. PC Stamp: %f\n",
+            //         laserCloudBPearl.front().timestamp, laserCloudBPearl.back().timestamp,
+            //         msgIn->header.stamp.toSec());
+
             auto &src = laserCloudBPearl.points[i];
             auto &dst = laserCloudOuster.points[i];
             dst.x = src.x;
@@ -137,20 +88,22 @@ public:
             dst.range = sqrt(src.x*src.x + src.y*src.y + src.z*src.z)*1000.0;
 
             // Remove points on the carrier
-            // if(remove_human_body)
-            // {
-            //     double yaw = Util::wrapTo360(atan2(dst.y, dst.x)*180/M_PI);
-            //     if (yaw > 38 && yaw < 142 && dst.range < 0.5)
-            //     {
-            //         dst.range = 0.0;
-            //         dst.x = dst.y = dst.z = 0;
-            //     }
-            // }
+            if(remove_human_body)
+            {
+                double yaw = Util::wrapTo360(atan2(dst.y, dst.x)*180/M_PI);
+                if (yaw > 38 && yaw < 142 && dst.range < 0.5)
+                {
+                    dst.range = 0.0;
+                    dst.x = dst.y = dst.z = 0;
+                }
+            }
 
             // max_intensity = (dst.intensity > max_intensity)?dst.intensity:max_intensity;
         }
 
-        publishCloud(ousterCloudPub, laserCloudOuster, msgIn->header.stamp, msgIn->header.frame_id);
+        Util::publishCloud(ousterCloudPub, laserCloudOuster,
+                           msgIn->header.stamp - ros::Duration(0.1),
+                           msgIn->header.frame_id);
     }
 };
 
@@ -160,7 +113,7 @@ int main(int argc, char **argv)
     ros::NodeHandle nh("~");
     ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
-    ROS_INFO("----> BPearl to Ouster started");
+    ROS_INFO(KGRN "----> BPearl to Ouster started" RESET);
 
     BPearlToOuster B2O(nh_ptr);
 

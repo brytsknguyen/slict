@@ -1,5 +1,5 @@
 /**
- * This file is part of SLICT.
+ * This file is part of slict.
  *
  * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.npn at ieee dot org>,
  * Division of RPL, KTH Royal Institute of Technology
@@ -9,18 +9,18 @@
  * If you use this code, please cite the respective publications as
  * listed on the above websites.
  *
- * SLICT is free software: you can redistribute it and/or modify
+ * slict is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * SLICT is distributed in the hope that it will be useful,
+ * slict is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
+ * along with slict.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 //
@@ -29,24 +29,20 @@
 
 #include "utility.h"
 
-#include <livox_ros_driver/CustomMsg.h>
-
 // const int queueLength = 2000;
 
 using namespace std;
 using namespace Eigen;
 using namespace pcl;
 
-class LivoxToOuster
+class VelodyneToOuster
 {
 private:
     // Node handler
     ros::NodeHandlePtr nh_ptr;
 
-    ros::Subscriber livoxCloudSub;
+    ros::Subscriber velodyneCloudSub;
     ros::Publisher ousterCloudPub;
-
-    double intensityConvCoef = -1;
 
     int NUM_CORE;
 
@@ -54,39 +50,62 @@ private:
 
 public:
     // Destructor
-    ~LivoxToOuster() {}
+    ~VelodyneToOuster() {}
 
-    LivoxToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    VelodyneToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
-        // Coefficient to convert the intensity from livox to ouster
-        nh_ptr->param("intensityConvCoef", intensityConvCoef, 1.0);
+        // int remove_human_body_;
+        // nh_ptr->param("remove_human_body", remove_human_body_, 0);
+        // remove_human_body = (remove_human_body_ == 0)?false:true;
 
-        livoxCloudSub = nh_ptr->subscribe<livox_ros_driver::CustomMsg>("/livox/lidar", 50, &LivoxToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/livox/lidar_ouster", 50);
+        velodyneCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 50, &VelodyneToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
+        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
     }
 
-    void cloudHandler(const livox_ros_driver::CustomMsg::ConstPtr &msgIn)
+    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
     {
-        int cloudsize = msgIn->points.size();
+        // Check if the pointcloud has time
+        static int has_time = -1;
+        if (has_time == -1)
+        {
+            for(auto &field : msgIn->fields)
+                if (field.name == "time")
+                {
+                    has_time = 1;
+                    break;
+                }
+
+            if (has_time == -1)
+                has_time = 0;
+
+            printf(KRED "Msg has no time field\n" RESET);
+        }
+
+        CloudVelodyne laserCloudVelodyne;
+        pcl::fromROSMsg(*msgIn, laserCloudVelodyne);
+
+        int cloudsize = laserCloudVelodyne.size();
 
         CloudOuster laserCloudOuster;
         laserCloudOuster.points.resize(cloudsize);
         laserCloudOuster.is_dense = true;
 
+        static double hsToOusterIntensity = 1.0;
+
         #pragma omp parallel for num_threads(NUM_CORE)
         for (size_t i = 0; i < cloudsize; i++)
         {
-            auto &src = msgIn->points[i];
+            auto &src = laserCloudVelodyne.points[i];
             auto &dst = laserCloudOuster.points[i];
             dst.x = src.x;
             dst.y = src.y;
             dst.z = src.z;
-            dst.intensity = src.reflectivity * intensityConvCoef;
-            dst.ring = src.line;
-            dst.t = src.offset_time;
-            dst.range = sqrt(src.x * src.x + src.y * src.y + src.z * src.z)*1000.0;
+            dst.intensity = src.intensity * hsToOusterIntensity;
+            dst.ring = src.ring;
+            dst.t = src.time * 1e9f;
+            dst.range = sqrt(src.x * src.x + src.y * src.y + src.z * src.z)*1000;
         }
 
         Util::publishCloud(ousterCloudPub, laserCloudOuster, msgIn->header.stamp, msgIn->header.frame_id);
@@ -95,13 +114,13 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "livox_to_ouster");
+    ros::init(argc, argv, "velodyne_to_ouster");
     ros::NodeHandle nh("~");
     ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
-    ROS_INFO(KGRN "----> Livox to Ouster started" RESET);
+    ROS_INFO(KGRN "----> Velodyne to Ouster started" RESET);
 
-    LivoxToOuster L2O(nh_ptr);
+    VelodyneToOuster C2P(nh_ptr);
 
     ros::MultiThreadedSpinner spinner(0);
     spinner.spin();

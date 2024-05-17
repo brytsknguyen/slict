@@ -1,5 +1,5 @@
-#ifndef SLICT_RELODOMFACTOR_H_
-#define SLICT_RELODOMFACTOR_H_
+#ifndef slict_RELODOMFACTOR_H_
+#define slict_RELODOMFACTOR_H_
 
 #include <ceres/ceres.h>
 #include <Eigen/Eigen>
@@ -137,4 +137,4 @@ class RelOdomFactor : public ceres::SizedCostFunction<6, 7, 7>
     }
 };
 
-#endif //SLICT_RELODOMFACTOR_H_
+#endif //slict_RELODOMFACTOR_H_

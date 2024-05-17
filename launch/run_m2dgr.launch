@@ -6,9 +6,9 @@
 
       <!-- NTU VIRAL dataset . Downloadable at: https://ntu-aris.github.io/m2dgr_dataset -->
 
-      <arg name="data_path" default="/home/tmn/DATASETS/NTU_VIRAL/"/>
+      <arg name="data_path" default="/media/tmn/mySataSSD1/DATASETS/M2DGR/Data/"/>
       
-      <arg  name="bag_file" default="/home/tmn/gate_01.bag"/>
+      <arg  name="bag_file" default="$(arg data_path)/hall_01.bag"/>
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
       <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/m2dgr"/>
@@ -21,7 +21,7 @@
       <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
 
       <!-- Run the velodyne to ouster -->
-      <node pkg="slict" required="true" type="slict_velodyne_to_ouster" name="slict_velodyne_to_ouster" respawn="false" output="screen"/>
+      <node pkg="slict" required="true" type="slict_m2dgr_to_ouster" name="slict_m2dgr_to_ouster" respawn="false" output="screen"/>
 
       <!-- Run the sensor sync -->
       <node pkg="slict" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log" required="true"/>

@@ -1,0 +1,79 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun" default="0"/>
+      <arg name="loop_en" default="0"/>
+
+      <!-- Data path -->
+      <arg name="data_path" default="/media/tmn/mySataSSD2/DATASETS/STILL_WAREHOUSE/Dataset/exported/"/>
+      <!-- Descriptor path -->
+      <arg name="descriptor_path" default="/media/tmn/mySataSSD2/DATASETS/STILL_WAREHOUSE/PriorMap/stillwh_prior/saved_descriptors/"/>
+
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_00_20221011_083001/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_01_20221011_090713/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_02_20221011_091824/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_03_20221011_094240/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_04_20221011_100710/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_05_20221011_103248/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_06_20221011_105816/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_07_20221011_110636/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_08_20221011_114218/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_09_20221011_115755/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_10_20221011_122304/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_11_20221011_123709/"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/stillwh_12_20221011_131830/"/> -->
+
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="1"/>
+
+      <!-- Priormap file -->
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD2/DATASETS/STILL_WAREHOUSE/PriorMap/stillwh_prior"/>
+
+      <!-- For debugging -->
+      <group if="$(eval 'stillwh_01' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.67,  69.93,  1.55, -84.86,  1.5,  0.00] </rosparam> </group>
+      <group if="$(eval 'stillwh_02' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.30,  70.00,  1.55, -83.72,  1.8,  0.00] </rosparam> </group>
+      <group if="$(eval 'stillwh_03' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.33,  69.91,  1.55, -85.00,  1.8,  0.00] </rosparam> </group>
+      <group if="$(eval 'stillwh_04' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.51,  69.98,  1.59, -84.30,  2.0, -0.58] </rosparam> </group>
+      <group if="$(eval 'stillwh_05' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.43,  69.98,  1.50, -84.89,  2.0, -0.84] </rosparam> </group>
+      <group if="$(eval 'stillwh_09' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.43,  69.98,  1.55, -84.89,  2.0, -0.84] </rosparam> </group>
+      <!-- <group if="$(eval 'stillwh_10' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.43,  69.98,  1.55, -84.89,  2.0, -0.84] </rosparam> </group> -->
+      <group if="$(eval 'stillwh_11' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 76.85,  69.84,  1.55, -83.60,  2.0, -0.46] </rosparam> </group>
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/stillwh"/>
+
+      <!-- Load the param -->
+      <rosparam file="$(find slict)/config/stillwh.yaml" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log" required="true"/>
+
+      <!-- Run the relocalization -->
+      <!-- <node pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+            <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node> -->
+            
+      <!-- Run the Estimator -->
+      <param name="/prior_map_dir" type="string" value="$(arg prior_map_dir)" />
+      <param name="/use_prior_map" type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report" type="int" value="1"/>
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz" respawn="true" output="log"
+            args="-d $(find slict)/launch/stillwh.rviz" />
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="--clock $(arg bag_file)/sensor_data/*.bag -r 1.0 -s 0"
+            launch-prefix="bash -c 'sleep 15; $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

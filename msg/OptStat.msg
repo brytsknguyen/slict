@@ -1,4 +1,4 @@
-# This file is part of SLICT.
+# This file is part of slict.
 # 
 # Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 # School of EEE
@@ -9,18 +9,18 @@
 # If you use this code, please cite the respective publications as
 # listed on the above websites.
 # 
-# SLICT is free software: you can redistribute it and/or modify
+# slict is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 # 
-# SLICT is distributed in the hope that it will be useful,
+# slict is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 # 
 # You should have received a copy of the GNU General Public License
-# along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
+# along with slict.  If not, see <http://www.gnu.org/licenses/>.
 
 #
 # Created by Thien-Minh Nguyen on 15/12/20.
@@ -105,6 +105,7 @@ int32   locMapKfInRadius        # Number of key frames in the radius
 int32   surfFactors             # Number of surface point2map associations, equal the factors
 int32   edgeFactors             # Number of edge point2map associations, equal the factors
 int32   imuFactors              # Number of IMU factors
+int32   propFactors             # Number of IMU-propagated factors
 int32   velFactors              # Number of Velocity factors
 int32   odomFactors             # Number of odometry factors
 int32   uwbFactors              # Number of all UWB factors
@@ -127,6 +128,9 @@ float64 JKEdge                  # Final cost of edge factors
 
 float64 J0Imu                   # Original cost of pretintegration factors
 float64 JKImu                   # Final cost of pretintegration factors
+
+float64 J0Prop                  # Original cost of pretintegration factors
+float64 JKProp                  # Final cost of pretintegration factors
 
 float64 J0Vel                   # Original cost of velocity factors
 float64 JKVel                   # Final cost of velocity factors

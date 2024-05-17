@@ -3,7 +3,7 @@
 # Kill all child processes when this script is killed
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
-DATA_PATH=${1:-/media/tmn/mySataSSD3/NTU_VIRAL}
+DATA_PATH=${1:-/media/tmn/mySataSSD2/DATASETS/NTU_VIRAL}
 DOCKER_IMG=brytsknguyen/slict-noetic-focal
 
 # Pull the image from docker hub
@@ -13,7 +13,6 @@ PKG_DIR=$(rospack find slict)
 
 # Launch rviz in background to give terminal to slict
 (rviz -d ${PKG_DIR}/launch/ntuviral.rviz) &
-rvizpid=$!
 
 # Launch slict
 docker run -it --rm --net=host \

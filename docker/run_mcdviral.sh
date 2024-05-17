@@ -13,7 +13,6 @@ PKG_DIR=$(rospack find slict)
 
 # Launch rviz in background to give terminal to slict
 (rviz -d ${PKG_DIR}/launch/mcdviral_atv.rviz) &
-rvizpid=$!
 
 # Launch slict
 docker run -it --rm --net=host \

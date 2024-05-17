@@ -1,5 +1,5 @@
 /**
-* This file is part of SLICT.
+* This file is part of slict.
 * 
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
@@ -10,18 +10,18 @@
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
 * 
-* SLICT is free software: you can redistribute it and/or modify
+* slict is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
 * 
-* SLICT is distributed in the hope that it will be useful,
+* slict is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
 * 
 * You should have received a copy of the GNU General Public License
-* along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
+* along with slict.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 //
@@ -63,7 +63,6 @@ struct CloudPacket
 
 class SensorSync
 {
-
 private:
         
     // Node handler
@@ -103,11 +102,12 @@ private:
     double cutoff_time_new = -1;
     double min_range = 0.5;
     vector<int> ds_rate = {1};
+    int sweep_len = 1;
 
     thread sync_lidar;
     thread sync_data;
-    
-    double imu_scale = 1.0;
+
+    double acce_scale = 1.0;
 
 public:
     // Destructor
@@ -158,7 +158,7 @@ public:
             lidar_sub.push_back(nh_ptr->subscribe<sensor_msgs::PointCloud2>
                                             (lidar_topic[i], 100,
                                              boost::bind(&SensorSync::PcHandler, this,
-                                                         _1, i, (int)extrinsicTf(3, 3))));
+                                                         _1, i, extrinsicTf(3, 2), (int)extrinsicTf(3, 3))));
         }
 
         nh_ptr->getParam("/min_range", min_range);
@@ -168,7 +168,10 @@ public:
         printf("Down samping rate: ");
         for(auto rate : ds_rate)
             printf("%d ", rate);
-        cout << endl;    
+        cout << endl;
+
+        nh_ptr->getParam("/sweep_len", sweep_len);
+        printf("Sweep len: %d\n", sweep_len);
 
         // Advertise lidar topic
         string merged_lidar_topic;
@@ -185,7 +188,7 @@ public:
         nh_ptr->getParam("/imu_topic", imu_topic);
 
         // Get the scale factor
-        nh_ptr->getParam("/imu_scale", imu_scale);
+        nh_ptr->getParam("/acce_scale", acce_scale);
 
         // Read the extrincs of lidars
         vector<double> imu_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -213,64 +216,136 @@ public:
         sync_data  = thread(&SensorSync::SyncData, this);
     }
 
-    void PcHandler(const sensor_msgs::PointCloud2::ConstPtr &msg, int idx, int stamp_type)
+    void PcHandler(const sensor_msgs::PointCloud2::ConstPtr &msg, int idx, double time_offset, int stamp_type)
     {
-        double startTime = -1, endTime = -1;
-        if (stamp_type == 1)
+        if (idx == 0)
         {
-            startTime = msg->header.stamp.toSec();
-            endTime = startTime + 0.1;
+            // Lump the pointclouds together
+            typedef sensor_msgs::PointCloud2::ConstPtr RosCloudPtr;
+            static deque<RosCloudPtr> cloudBuf;
+            cloudBuf.push_back(msg);
+
+            if (cloudBuf.size() >= sweep_len)
+            {
+                double startTime = -1, endTime = -1;
+                CloudXYZITPtr cloud_inB(new CloudXYZIT());
+
+                // Extract the point, cloud by cloud
+                for (RosCloudPtr &cloudMsg : cloudBuf)
+                {
+                    CloudOusterPtr cloud_inL(new CloudOuster());
+                    pcl::fromROSMsg(*cloudMsg, *cloud_inL);
+
+                    double cloud_start_time = -1, cloud_end_time = -1;
+                    double sweep_dur = (cloud_inL->points.back().t - cloud_inL->points.front().t)/1.0e9;
+                    double sweep_dur_err = fabs(sweep_dur - 0.1);
+                    // ROS_ASSERT_MSG(sweep_dur_err < 5e-3, "Sweep length %f not exactly 0.1s.\n", sweep_dur, sweep_dur_err);
+                    // Calculate the proper time stamps at the two ends
+                    if (stamp_type == 1)
+                    {
+                        cloud_start_time = cloudMsg->header.stamp.toSec() + time_offset;
+                        cloud_end_time   = cloud_start_time + sweep_dur;
+                    }
+                    else
+                    {
+                        cloud_end_time   = cloudMsg->header.stamp.toSec() + time_offset;
+                        cloud_start_time = cloud_end_time - sweep_dur;
+                    }
+
+                    startTime = (startTime < 0) ? cloud_start_time : min(startTime, cloud_start_time);
+                    endTime = (endTime < 0) ? cloud_end_time : max(endTime, cloud_end_time);
+
+                    // Check the min dist and restamp the points
+                    for(int i = 0; i < cloud_inL->size(); i++)
+                    {
+                        PointOuster &point_inL = cloud_inL->points[i];
+
+                        // Discard of the point if range is zero
+                        if (point_inL.range/1000.0 < min_range)
+                            continue;
+
+                        Vector3d p_inL(point_inL.x, point_inL.y, point_inL.z);
+                        p_inL = R_B_L[idx]*p_inL + t_B_L[idx];
+
+                        PointXYZIT point_inB;
+                        point_inB.x = p_inL(0);
+                        point_inB.y = p_inL(1);
+                        point_inB.z = p_inL(2);
+                        point_inB.intensity = point_inL.intensity;
+                        point_inB.t = point_inL.t / 1e9 + cloud_start_time;
+
+                        cloud_inB->push_back(point_inB);
+                    }
+                }
+
+                lidar_buf_mtx.lock();
+                lidar_buf[idx].push_back(CloudPacket(startTime, endTime, cloud_inB));
+                lidar_buf_mtx.unlock();
+                
+                cloudBuf.clear();
+            }
+        }
+        else if (idx != 0)
+        {
+            double startTime, endTime;
+            if (stamp_type == 1)
+            {
+                startTime = msg->header.stamp.toSec() + time_offset;
+                endTime   = startTime + 0.1;
+            }
+            else
+            {
+                endTime   = msg->header.stamp.toSec() + time_offset;
+                startTime = endTime - 0.1;
+            }
+
+            CloudOusterPtr cloud_inL(new CloudOuster());
+            pcl::fromROSMsg(*msg, *cloud_inL);
+
+            CloudXYZITPtr cloud_inB(new CloudXYZIT());
+
+            // Check the min dist and restamp the points
+            for(int i = 0; i < cloud_inL->size(); i++)
+            {
+                PointOuster &point_inL = cloud_inL->points[i];
+
+                // Discard of the point if range is zero
+                if (point_inL.range/1000.0 < min_range)
+                    continue;
+
+                Vector3d p_inL(point_inL.x, point_inL.y, point_inL.z);
+                p_inL = R_B_L[idx]*p_inL + t_B_L[idx];
+
+                PointXYZIT point_inB;
+                point_inB.x = p_inL(0);
+                point_inB.y = p_inL(1);
+                point_inB.z = p_inL(2);
+                point_inB.intensity = point_inL.intensity;
+                point_inB.t = point_inL.t / 1e9 + startTime;
+
+                cloud_inB->push_back(point_inB);
+            }
+            
+            lidar_buf_mtx.lock();
+            lidar_buf[idx].push_back(CloudPacket(startTime, endTime, cloud_inB));
+            lidar_buf_mtx.unlock();
         }
         else
-        {
-            endTime = msg->header.stamp.toSec();
-            startTime = endTime - 0.1;
-        }
-
-        // Convert the cloud msg to pcl
-        CloudOusterPtr cloud_inL(new CloudOuster());
-        pcl::fromROSMsg(*msg, *cloud_inL);
-
-        // Transform to the body frame
-        CloudXYZITPtr cloud_inB(new CloudXYZIT());
-        for(int i = 0; i < cloud_inL->size(); i++)
-        {
-            PointOuster &point_inL = cloud_inL->points[i];
-
-            // Discard of the point if range is zero
-            if (point_inL.range < min_range)
-                continue;
-
-            Vector3d p_inL(point_inL.x, point_inL.y, point_inL.z);
-            p_inL = R_B_L[idx]*p_inL + t_B_L[idx];
-
-            PointXYZIT point_inB;
-            point_inB.x = p_inL(0);
-            point_inB.y = p_inL(1);
-            point_inB.z = p_inL(2);
-            point_inB.intensity = point_inL.intensity;
-            point_inB.t = point_inL.t / 1e9;
-
-            cloud_inB->push_back(point_inB);
-        }
-
-        lidar_buf_mtx.lock();
-        lidar_buf[idx].push_back(CloudPacket(startTime, endTime, cloud_inB));
-        lidar_buf_mtx.unlock();
+            return;
     }
 
     void ImuHandler(const sensor_msgs::Imu::ConstPtr &msg)
     {
         imu_buf_mtx.lock();
 
-        if (imu_scale != 1.0)
+        if (acce_scale != 1.0)
         {
             sensor_msgs::Imu::Ptr scaled_imu(new sensor_msgs::Imu());
             
             *scaled_imu = *msg;
-            scaled_imu->linear_acceleration.x *= imu_scale;
-            scaled_imu->linear_acceleration.y *= imu_scale;
-            scaled_imu->linear_acceleration.z *= imu_scale;
+            scaled_imu->linear_acceleration.x *= acce_scale;
+            scaled_imu->linear_acceleration.y *= acce_scale;
+            scaled_imu->linear_acceleration.z *= acce_scale;
 
             imu_buf.push_back(scaled_imu);
         }
@@ -398,24 +473,24 @@ public:
                     break;
 
                 int one_in_n = ds_rate[i];
-                int ds_count = -1;
+                static int ds_count = -1;
 
                 // Copy the points into the extracted pointcloud or the leftover
                 for( auto &point : front_cloud.cloud->points )
                 {
                     ds_count++; if (ds_count % one_in_n != 0) continue; // Skip one every
 
-                    double point_time = point.t + front_cloud.startTime;
+                    double point_time = point.t;
 
                     if (point_time >= cutoff_time && point_time <= cutoff_time_new)
                     {
                         extracted_clouds[i]->push_back(point);
-                        extracted_clouds[i]->points.back().t = point_time - cutoff_time;
+                        // extracted_clouds[i]->points.back().t = point_time - cutoff_time;
                     }
                     else if (point_time > cutoff_time_new)
                     {
                         leftover_cloud.cloud->push_back(point);
-                        leftover_cloud.cloud->points.back().t = point_time - cutoff_time_new;
+                        // leftover_cloud.cloud->points.back().t = point_time - cutoff_time_new;
 
                         if (point_time > leftover_cloud.endTime)
                             leftover_cloud.endTime = point_time;
@@ -446,17 +521,17 @@ public:
                     // Insert the leftover points back in the buffer
                     for( auto &point : leftover_frontcloud.cloud->points )
                     {
-                        double point_time = point.t + leftover_frontcloud.startTime;
+                        double point_time = point.t;
 
                         if (point_time >= cutoff_time && point_time <= cutoff_time_new)
                         {
                             extracted_clouds[i]->push_back(point);
-                            extracted_clouds[i]->points.back().t = point_time - cutoff_time;
+                            // extracted_clouds[i]->points.back().t = point_time - cutoff_time;
                         }
                         else if (point_time > cutoff_time_new)
                         {
                             leftover_cloud.cloud->push_back(point);
-                            leftover_cloud.cloud->points.back().t = point_time - cutoff_time_new;
+                            // leftover_cloud.cloud->points.back().t = point_time - cutoff_time_new;
 
                             if (point_time > leftover_cloud.endTime)
                                 leftover_cloud.endTime = point_time;
@@ -588,17 +663,17 @@ public:
                     ROS_ASSERT( tb - ta > 0 );
 
                     Vector3d gyro_ta(imu_bundle.back().angular_velocity.x,
-                                        imu_bundle.back().angular_velocity.y,
-                                        imu_bundle.back().angular_velocity.z);
+                                     imu_bundle.back().angular_velocity.y,
+                                     imu_bundle.back().angular_velocity.z);
                     Vector3d gyro_tb(imu_sample.angular_velocity.x,
-                                        imu_sample.angular_velocity.y,
-                                        imu_sample.angular_velocity.z);
+                                     imu_sample.angular_velocity.y,
+                                     imu_sample.angular_velocity.z);
                     Vector3d acce_ta(imu_bundle.back().linear_acceleration.x,
-                                        imu_bundle.back().linear_acceleration.y,
-                                        imu_bundle.back().linear_acceleration.z);
+                                     imu_bundle.back().linear_acceleration.y,
+                                     imu_bundle.back().linear_acceleration.z);
                     Vector3d acce_tb(imu_sample.linear_acceleration.x,
-                                        imu_sample.linear_acceleration.y,
-                                        imu_sample.linear_acceleration.z);   
+                                     imu_sample.linear_acceleration.y,
+                                     imu_sample.linear_acceleration.z);   
                     
                     // Make an interpolated sample
                     double t_itp = merged_cloud.endTime;

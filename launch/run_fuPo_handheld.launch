@@ -2,7 +2,7 @@
 
       <arg name="publish_clock" default="--clock"/>
       <arg name="autorun" default="0"/>
-      <arg name="loop_en" default="0"/>
+      <arg name="loop_en" default="1"/>
 
       <!-- Fusion Portable dataset . Downloadable at: https://ram-lab.com/file/site/fusionportable/dataset/fusionportable/ -->
 
@@ -12,7 +12,8 @@
       <!-- <arg  name="bag_file" default="$(arg data_path)/20220216_MCR_normal.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/20220216_MCR_fast.bag"/> -->
       <!-- <arg  name="bag_file" default="$(arg data_path)/20220216_corridor_day.bag"/> -->
-      <arg  name="bag_file" default="$(arg data_path)/20220215_canteen_night.bag"/>
+      <!-- <arg  name="bag_file" default="$(arg data_path)/20220215_canteen_night.bag"/> -->
+      <!-- <arg  name="bag_file" default="$(arg data_path)/20220216_garden_day_ref.bag"/> -->
 
       <!-- Quadrupedal sequence -->
 
