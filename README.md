@@ -4,7 +4,7 @@ SLICT: Multi-Input, Multi-Scale, Efficient, Surfel-Based, Lidar-Inertial Continu
 Note: This is an actively developed repo. The stable versions are listed at https://github.com/brytsknguyen/slict/tags.
 
 # Publication
-The details of SLICT are presented in two RA-L papers. Please cite this work if you find it useful:
+The details of SLICT are presented in two RA-L papers. Please cite these works if you find SLICT useful:
 
 ```
 @article{nguyen2023slict,
@@ -36,6 +36,7 @@ The details of SLICT are presented in two RA-L papers. Please cite this work if 
 # Summary
 
 ## SLICT 1:
+(Please checkout the tag [slict.1.0](https://github.com/brytsknguyen/slict/releases/tag/slict.1.0))
 <div align="center">
     <a href="https://youtu.be/mogIgBq97Hs" target="_blank">
     <img src="docs/thumbnail.png" width=80% />
@@ -43,7 +44,7 @@ The details of SLICT are presented in two RA-L papers. Please cite this work if 
 
 ## SLICT 2 (current commit):
 
-Upgrades to using B-spline for trajectory representation, knot legnth as small as 0.01s, with an efficient solver that ensures real time.
+Upgrades to using B-spline for trajectory representation, knot length as small as 0.01s, with an efficient solver that ensures real-time performance.
 More details can be find at our [RA-L paper](https://ieeexplore.ieee.org/document/10504969).
 
 
