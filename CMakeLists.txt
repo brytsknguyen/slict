@@ -137,6 +137,11 @@ add_executable(${PROJECT_NAME}_velodyne_to_ouster src/lidar_converters/VelodyneT
 add_dependencies(${PROJECT_NAME}_velodyne_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_velodyne_to_ouster PRIVATE ${OpenMP_CXX_FLAGS})
 target_link_libraries(${PROJECT_NAME}_velodyne_to_ouster ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
+# Reverse Velodyne
+add_executable(${PROJECT_NAME}_OusterToVelodyne src/lidar_converters/OusterToVelodyne.cpp)
+add_dependencies(${PROJECT_NAME}_OusterToVelodyne ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_compile_options(${PROJECT_NAME}_OusterToVelodyne PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_OusterToVelodyne ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map)
 # Livox avia, mid-70
 add_executable(${PROJECT_NAME}_livox_to_ouster src/lidar_converters/LivoxToOuster.cpp)
 add_dependencies(${PROJECT_NAME}_livox_to_ouster ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
