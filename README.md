@@ -21,9 +21,9 @@ The details of SLICT are presented in two RA-L papers. Please cite these works i
 
 ```
 @article{nguyen2024eigen,
+  title         = {Eigen Is All You Need: Efficient Lidar-Inertial Continuous-Time Odometry With Internal Association}, 
   author        = {Nguyen, Thien-Minh and Xu, Xinhang and Jin, Tongxing and Yang, Yizhuo and Li, Jianping and Yuan, Shenghai and Xie, Lihua},
   journal       = {IEEE Robotics and Automation Letters}, 
-  title         = {Eigen Is All You Need: Efficient Lidar-Inertial Continuous-Time Odometry With Internal Association}, 
   year          = {2024},
   volume        = {9},
   number        = {6},
