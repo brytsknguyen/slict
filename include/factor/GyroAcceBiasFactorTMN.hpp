@@ -196,7 +196,7 @@ public:
 
         /* #region Jacobian of angular velocity ---------------------------------------------------------------------*/
 
-        // The inverse right Jacobian Jr(dj) = d(deltaj)/d(Rj). Note that d( d[j+1] )/d( R[j] ) = -Jr(-d[j+1])
+        // The inverse right Jacobian JrInv(dj) = d(deltaj)/d(Rj). Note that d( d[j+1] )/d( R[j] ) = -Jr(-d[j+1])
         Matrix3d ddelta_dR[N];
         for (int j = 0; j < N; j++)
             ddelta_dR[j] = rightJacobianInv(delta[j]);
@@ -290,7 +290,7 @@ public:
 
         int biaidx = N*6 + 3;
         Eigen::Block<Eigen::Matrix<double, 12, -1>, 12, 3> J_ba = jacobian.block<12, 3>(0, biaidx);
-        J_ba.block<3, 3>(3, 0) = Matrix3d::Identity() * wAcce    ;
+        J_ba.block<3, 3>(3, 0) = Matrix3d::Identity() * wAcce;
         J_ba.block<3, 3>(9, 0) = Matrix3d::Identity() * wBiasAcce;
 
         return true;
