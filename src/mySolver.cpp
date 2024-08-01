@@ -751,10 +751,17 @@ bool mySolver::Solve
             && all_retained == true)
         {
             int XSE3_OLDPR_SIZE = knot_x_keep_retained.size()*XSE3_SIZE;
+
+            // printf("Hpr %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
+            //         Hprior_final_reduced.rows(), Hprior_final_reduced.rows(), XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
+            
             InsertZeroCol(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(bprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             
+            // printf("Hpr %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
+            //         Hprior_final_reduced.rows(), Hprior_final_reduced.rows(), XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
+
             SparseMatrix<double> H_extr_sparse = Hprior_final_reduced.sparseView(); H_extr_sparse.makeCompressed();
             SparseMatrix<double> b_extr_sparse = bprior_final_reduced.sparseView(); b_extr_sparse.makeCompressed();
             
