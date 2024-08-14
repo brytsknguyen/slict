@@ -1080,7 +1080,7 @@ public:
                     continue;
                 }
             }
-            
+
             // Fit the spline at the ending segment to avoid high cost
             std::thread threadFitSpline;
             if (fit_spline)
@@ -1329,7 +1329,7 @@ public:
                 pstop_times_report += myprintf("dsk: %.1f, ", tlog.t_desk.back());
 
                 TicToc tt_assoc_;
-    
+
                 // Redo the map association
                 for (int i = first_round ? 0 : max(0, WINDOW_SIZE - reassociate_steps); i < WINDOW_SIZE; i++)
                 {
@@ -1363,7 +1363,7 @@ public:
                 report.tpreopt        = tt_preopt.GetLastStop();
                 report.tpostopt       = tt_posproc.GetLastStop();
                 report.tlp            = tt_loop.Toc();
-                
+
                 static double last_tmapping = -1;
                 if (last_tmapping != tt_margcloud.GetLastStop())
                 {
@@ -1388,9 +1388,9 @@ public:
                              "Map: %d\n"
                              "J0:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
                              "JK:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
-                             "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
+                            //  "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
                             //  "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f.\n"
-                             "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
+                            //  "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
                              "DVA:  %s\n",
                              // Time and iterations
                              report.OptNum, report.OptNumSub, max_outer_iters,
@@ -1417,18 +1417,18 @@ public:
                              // Optimization final costs
                              report.JK, report.JKSurf, report.JKImu, report.JKProp, report.JKVel,
                              // Bias Estimate
-                             ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
-                             ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
-                             BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
+                            //  ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
+                            //  ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                            //  BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
                              // Pose Estimate from propogation
                             //  eul_imu.x(), eul_imu.y(), eul_imu.z(),
                             //  report.Pimu.x, report.Pimu.y, report.Pimu.z,
                             //  report.Vimu.x, report.Vimu.y, report.Vimu.z,
                              // Pose Estimate from Optimization
-                             eul_est.x(), eul_est.y(), eul_est.z(),
-                             report.Pest.x, report.Pest.y, report.Pest.z,
-                             report.Vest.x, report.Vest.y, report.Vest.z,
-                             Vest.norm(), (Vest - Vimu).norm(),
+                            //  eul_est.x(), eul_est.y(), eul_est.z(),
+                            //  report.Pest.x, report.Pest.y, report.Pest.z,
+                            //  report.Vest.x, report.Vest.y, report.Vest.z,
+                            //  Vest.norm(), (Vest - Vimu).norm(),
                              // Report on the assocations at different scales
                              DVAReport.c_str())
                     : "\n";
@@ -1482,7 +1482,7 @@ public:
             /* #endregion STEP 8: LIO optimizaton -------------------------------------------------------------------*/
 
             /* #region STEP 9: Recruit Keyframe ---------------------------------------------------------------------*/
-            
+
             NominateKeyframe();
 
             /* #endregion STEP 9: Recruit Keyframe ------------------------------------------------------------------*/
@@ -1502,7 +1502,7 @@ public:
             /* #endregion STEP 9: Loop Closure and BA ---------------------------------------------------------------*/
 
             /* #region STEP 11: Report and Vizualize ----------------------------------------------------------------*/ 
-            
+
             // Export the summaries
             if (show_report)
                 cout << printout;
@@ -1529,6 +1529,7 @@ public:
             tlog.t_loop = tt_whileloop.Toc();
             static ros::Publisher tlog_pub = nh_ptr->advertise<slict::TimeLog>("/time_log", 100);
             tlog_pub.publish(tlog);
+
         }
     }
 

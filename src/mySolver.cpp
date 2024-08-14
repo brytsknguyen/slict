@@ -877,6 +877,6 @@ bool mySolver::Solve
     // bsu_report += myprintf("XBIAS.  BIG: %7.3f, %7.3f, %7.3f. BIG: %7.3f, %7.3f, %7.3f\n",
     //                          xbg(0), xbg(1), xbg(2), xba(0), xba(1), xba(2));
     // bsu_report += "\n";
-    
+
     return true;
 }
