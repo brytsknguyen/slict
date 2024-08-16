@@ -71,7 +71,7 @@ The software was developed on the following dependencies. Ubuntu 20.04 and ROS N
   cd Sophus
   mkdir build && cd build
   cmake .. -DSOPHUS_USE_BASIC_LOGGING=ON
-  make -j
+  make -j$(nproc)
   sudo make install
   ```
 - One more package:
