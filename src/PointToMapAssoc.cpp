@@ -54,59 +54,61 @@ void PointToMapAssoc::AssociatePointWithMap(PointXYZIT &fRaw, Vector3d &finB, Ve
         int depth = node.depth();
         int numPoint = surfel.getNumPoints();
 
-        std::array<double, 6> cov = surfel.getSymmetricCovariance();
-        double planarity = 0;
-        Vector3d norm(0, 0, 0);
+        // std::array<double, 6> cov = surfel.getSymmetricCovariance();
+        // double planarity = 0;
+        // Vector3d norm(0, 0, 0);
 
-        auto AccessCov = [](const std::array<double, 6> &cov, double &planarity, Vector3d &norm) -> void
-        {
-            double a = cov[0]; double b = cov[3]; double c = cov[5]; double d = cov[1]; double e = cov[4]; double f = cov[2];
+        // auto AccessCov = [](const std::array<double, 6> &cov, double &planarity, Vector3d &norm) -> void
+        // {
+        //     double a = cov[0]; double b = cov[3]; double c = cov[5]; double d = cov[1]; double e = cov[4]; double f = cov[2];
 
-            if(isnan(a) || isnan(b) || isnan(c) || isnan(d) || isnan(e) || isnan(f))
-            {
-                printf("Node has NaN Cov");
-                planarity = 0;
-                norm = Vector3d(0, 0, 0);
-            }
+        //     if(isnan(a) || isnan(b) || isnan(c) || isnan(d) || isnan(e) || isnan(f))
+        //     {
+        //         printf("Node has NaN Cov");
+        //         planarity = 0;
+        //         norm = Vector3d(0, 0, 0);
+        //         return;
+        //     }
 
-            if(isnan(a) || isnan(b) || isnan(c) || isnan(d) || isnan(e) || isnan(f))
-            {
-                printf("Node has inf Cov");
-                planarity = 0;
-                norm = Vector3d(0, 0, 0);
-            }
+        //     if(!isfinite(a) || !isfinite(b) || !isfinite(c) || !isfinite(d) || !isfinite(e) || !isfinite(f))
+        //     {
+        //         printf("Node has inf Cov");
+        //         planarity = 0;
+        //         norm = Vector3d(0, 0, 0);
+        //         return;
+        //     }
 
-            ROS_ASSERT_MSG(!isnan(a) && !isnan(b) && !isnan(c) && !isnan(d) && !isnan(e) && !isnan(f)
-                           && isfinite(a) && isfinite(b) && isfinite(c) && isfinite(d) && isfinite(e) && isfinite(f),
-                           "%f, %f, %f, %f, %f, %f\n", a, b, c, d, e, f);
+        //     ROS_ASSERT_MSG(!isnan(a) && !isnan(b) && !isnan(c) && !isnan(d) && !isnan(e) && !isnan(f)
+        //                    && isfinite(a) && isfinite(b) && isfinite(c) && isfinite(d) && isfinite(e) && isfinite(f),
+        //                    "%f, %f, %f, %f, %f, %f\n", a, b, c, d, e, f);
 
-            double const x_1 = a * a + b * b + c * c - a * b - a * c - b * c + 3 * (d * d + f * f + e * e);
+        //     Matrix3d C; C << a, d, f,
+        //                      d, b, e,
+        //                      f, e, c;
 
-            double const x_2 = -(2 * a - b - c) * (2 * b - a - c) * (2 * c - a - b)
-                               + 9 * ((2 * c - a - b) * (d * d) + (2 * b - a - c) * (f * f) + (2 * a - b - c) * (e * e))
-                               - 54 * (d * e * f);
+        //     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigensolver(C);
 
-            double const phi = 0 < x_2 ? std::atan(std::sqrt(4 * x_1 * x_1 * x_1 - x_2 * x_2) / x_2)
-                                       : (0 > x_2 ? std::atan(std::sqrt(4 * x_1 * x_1 * x_1 - x_2 * x_2) / x_2) + M_PI
-                                                  : M_PI_2);
-            assert(!isnan(phi) && isfinite(phi));
+        //     if (eigensolver.info() != Eigen::Success)
+        //     {
+        //         std::cerr << "Error in computing eigenvalues and eigenvectors." << std::endl;
+        //         planarity = 0;
+        //         norm = Vector3d(0, 0, 0);
+        //         return;
+        //     }
 
-            // Find egein values
-            double l_1 = (a + b + c - 2 * std::sqrt(x_1) * std::cos(phi / 3)) / 3;
-            double l_2 = (a + b + c + 2 * std::sqrt(x_1) * std::cos((phi + M_PI) / 3)) / 3;
-            double l_3 = (a + b + c + 2 * std::sqrt(x_1) * std::cos((phi - M_PI) / 3)) / 3;
+        //     // Get the eigen values
+        //     Vector3d lambda = eigensolver.eigenvalues();
 
-            f = 0 == f ? std::numeric_limits<float>::epsilon() : f;
-            double const m_1 = (d * (c - l_1) - e * f) / (f * (b - l_1) - d * e);            
-            planarity = 2 * (l_2 - l_1) / (l_1 + l_2 + l_3);
-            norm = Vector3d((l_1 - c - e * m_1) / f, m_1, 1);
-            norm.normalize();
-        };
+        //     // Calculate planarity and normal
+        //     planarity = 2 * (lambda(1) - lambda(0)) / (lambda(0) + lambda(1) + lambda(2));
+        //     norm = eigensolver.eigenvectors().col(0);
+        //     norm.normalize();
+        // };
 
-        AccessCov(cov, planarity, norm);
+        // AccessCov(cov, planarity, norm);
 
-        // double planarity = surfel.getPlanarity();
-        // Vector3d norm = ufo::math::toEigen(surfel.getNormal());
+        double planarity = surfel.getPlanarity();
+        Vector3d norm = ufo::math::toEigen(surfel.getNormal());
         Vector3d mean = ufo::math::toEigen(surfel.getMean());
 
         if(    isnan(mean(0)) || isnan(mean(1)) || isnan(mean(2))
