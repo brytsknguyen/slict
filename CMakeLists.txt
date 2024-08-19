@@ -128,6 +128,11 @@ add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
 add_dependencies(${PROJECT_NAME}_imu_odom ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_imu_odom PRIVATE ${OpenMP_CXX_FLAGS})
 target_link_libraries(${PROJECT_NAME}_imu_odom ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
+# Relocalization
+add_executable(${PROJECT_NAME}_relocalization src/Relocalization.cpp src/STDesc.cpp)
+add_dependencies(${PROJECT_NAME}_relocalization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_compile_options(${PROJECT_NAME}_relocalization PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
 
 # Converter of different lidar formats to ouster
 # Velodyne

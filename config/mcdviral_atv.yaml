@@ -3,9 +3,9 @@ autoexit:           1
 
 # Declare the lidar topics to merge
 lidar_topic:        [
-                      # "/os_cloud_node/points"
+                      "/os_cloud_node/points"
                       # ,
-                      "/livox/lidar_ouster"
+                      # "/livox/lidar_ouster"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -14,17 +14,17 @@ merged_lidar_topic: "/merged_pc"
 # NOTE TO USER: The (4,4) entry of the extrinsics is used to declare
 # whether stamp is at beginning (1.000) or end (0.000) of scan
 lidar_extr:         [
-                    #   # Ouster
-                    #   0.999934655205122900,    0.003477624535771754,  -0.010889970036688295,  -0.060649229060416594,
-                    #   0.003587143302461965,   -0.999943027982117100,   0.010053516443599904,  -0.012837544242408117,
-                    #  -0.010854387257665576,   -0.010091923381711220,  -0.999890161647627000,  -0.020492606896077407,
-                    #   0.000000000000000000,    0.000000000000000000,   0.000000000000000000,   0.000000000000000000
+                      # Ouster
+                      0.999934655205122900,    0.003477624535771754,  -0.010889970036688295,  -0.060649229060416594,
+                      0.003587143302461965,   -0.999943027982117100,   0.010053516443599904,  -0.012837544242408117,
+                     -0.010854387257665576,   -0.010091923381711220,  -0.999890161647627000,  -0.020492606896077407,
+                      0.000000000000000000,    0.000000000000000000,   0.000000000000000000,   0.000000000000000000
                     #   ,
-                      # Livox
-                      0.99985813160508060000, -0.0002258196228773494, -0.0168423771687589430, -0.010514839241742317,
-                     -0.00017111407692153792, -0.9999947058517530000,  0.0032494597148797887, -0.008989784841758377,
-                     -0.01684302179448474500, -0.0032461167514232880, -0.9998528768488223000,  0.037356468638334630,
-                      0.00000000000000000000,  0.000000000000000000,   0.0000000000000000000,  1.000000000000000000
+                    #   # Livox
+                    #   0.99985813160508060000, -0.0002258196228773494, -0.0168423771687589430, -0.010514839241742317,
+                    #  -0.00017111407692153792, -0.9999947058517530000,  0.0032494597148797887, -0.008989784841758377,
+                    #  -0.01684302179448474500, -0.0032461167514232880, -0.9998528768488223000,  0.037356468638334630,
+                    #   0.00000000000000000000,  0.000000000000000000,   0.0000000000000000000,  1.000000000000000000
                     ]
 
 # Minimum lidar range to admit
@@ -77,7 +77,7 @@ reassoc_rate:       0
 use_ceres:          0
 
 # Downsampling grid size, chose -1 for no downsampling
-leaf_size:          0.05          # Downsample scale of input pointcloud, also the scale of ufomap leaf
+leaf_size:          0.1           # Downsample scale of input pointcloud, also the scale of ufomap leaf
 assoc_spacing:      0.4
 surfel_map_depth:   16
 surfel_min_point:   5
@@ -93,9 +93,9 @@ score_min:          0.0
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      # 8
+                      8
                       # ,
-                      1
+                      # 1
                     ]
 
 # Number of pointclouds to merge into one
@@ -136,7 +136,7 @@ regularize_imu:     0
 imu_init_time:      0.5
 lite_redeskew:      1
 max_outer_iters:    3
-max_lidar_factor:   8000  # Maximum number of lidar factors
+max_lidar_factor:   4000  # Maximum number of lidar factors
 dj_thres:           0.0
 dx_thres:           0.5
 
