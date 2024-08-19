@@ -791,6 +791,8 @@ public:
 
         int PM_KF_COUNT = pmPose->size();
         printf(KGRN "Prior map path %s. Num scans: %d. Begin loading ...\n" RESET, pmPose_.c_str(), pmPose->size());
+        
+        pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
 
         if (!std::filesystem::exists(prior_map_dir + "/ufo_surf_map.um"))
         {
@@ -802,7 +804,7 @@ public:
             for (int i = 0; i < PM_KF_COUNT; i++)
             {
                 pmFull[i] = CloudXYZIPtr(new CloudXYZI());
-                string pmFull_ = prior_map_dir + "/pointclouds/Full/" + "KfFullPcl_" + to_string(i) + ".pcd";
+                string pmFull_ = prior_map_dir + "/pointclouds/cloud_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
                 pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
 
                 printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
@@ -864,7 +866,7 @@ public:
                 for (int i = 0; i < PM_KF_COUNT; i++)
                 {
                     pmFull[i] = CloudXYZIPtr(new CloudXYZI());
-                    string pmFull_ = prior_map_dir + "/pointclouds/Full/" + "KfFullPcl_" + to_string(i) + ".pcd";
+                    string pmFull_ = prior_map_dir + "/pointclouds/cloud_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
                     pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
 
                     printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
@@ -4406,8 +4408,8 @@ public:
                 msg.data = "NOT_RELOCALIZED";
             else if (reloc_stat == RELOCALIZED)
                 msg.data = myprintf("RELOCALIZED. [%7.2f, %7.2f, %7.2f, %7.2f, %7.2f, %7.2f]",
-                                    tf_Lprior_L0_init.pos(0), tf_Lprior_L0_init.pos(1), tf_Lprior_L0_init.pos(2),
-                                    tf_Lprior_L0_init.yaw(), tf_Lprior_L0_init.pitch(), tf_Lprior_L0_init.roll());
+                                    tf_Lprior_L0.pos(0), tf_Lprior_L0.pos(1),  tf_Lprior_L0.pos(2),
+                                    tf_Lprior_L0.yaw(),  tf_Lprior_L0.pitch(), tf_Lprior_L0.roll());
             else if (reloc_stat == RELOCALIZING)
                 msg.data = "RELOCALIZING";
             reloc_pose_pub.publish(msg);

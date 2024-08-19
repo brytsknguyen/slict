@@ -3,9 +3,9 @@ autoexit:           1
 
 # Declare the lidar topics to merge
 lidar_topic:        [
-                      # "/os_cloud_node/points"
+                      "/os_cloud_node/points"
                       # ,
-                      "/livox/lidar_ouster"
+                      # "/livox/lidar_ouster"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -14,17 +14,17 @@ merged_lidar_topic: "/merged_pc"
 # NOTE TO USER: The (4,4) entry of the extrinsics is used to declare
 # whether stamp is at beginning (1.000) or end (0.000) of scan
 lidar_extr:         [
-                    #   # Ouster
-                    #   0.999913504074182800, -0.01116636551106650,  -0.0069495792219705765, -0.04894521120476690,
-                    #  -0.011356389542500523, -0.99954530068657550,  -0.0279324952688129200, -0.03126929060277820,
-                    #  -0.006634514801262056,  0.02800900135057546,  -0.9995856536869142000, -0.01755515794190739,
-                    #   0.0,                   0.0,                   0.0,                    0.0
-                    #   ,
-                      # Livox
-                      1.0,                   0.0,                   0.0,                    0.020,
-                      0.0,                  -1.0,                   0.0,                    0.000,
-                      0.0,                   0.0,                  -1.0,                    0.037,
-                      0.0,                   0.0,                   0.0,                    1.000
+                      # Ouster
+                      0.999913504074182800, -0.01116636551106650,  -0.0069495792219705765, -0.04894521120476690,
+                     -0.011356389542500523, -0.99954530068657550,  -0.0279324952688129200, -0.03126929060277820,
+                     -0.006634514801262056,  0.02800900135057546,  -0.9995856536869142000, -0.01755515794190739,
+                      0.0,                   0.0,                   0.0,                    0.0
+                      # ,
+                      # # Livox
+                      # 1.0,                   0.0,                   0.0,                    0.020,
+                      # 0.0,                  -1.0,                   0.0,                    0.000,
+                      # 0.0,                   0.0,                  -1.0,                    0.037,
+                      # 0.0,                   0.0,                   0.0,                    1.000
                     ]
 
 # Minimum lidar range to admit
@@ -85,7 +85,7 @@ surfel_min_depth:   1
 surfel_query_depth: 7             # Equal to Dmax + 1. Dmax is defined in the paper
 surfel_intsect_rad: 0.2           # r in the the paper
 surfel_min_plnrty:  0.4
-use_ufm:            0
+use_ufm:            1
 
 # Distance to surfel and min score thresholds
 dis_to_surfel_max:  0.3
@@ -93,17 +93,17 @@ score_min:          0.0
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      # 8
+                      2
                       # ,
-                      1
+                      # 1
                     ]
 
 # Number of pointclouds to merge into one
 sweep_len:          1
 
 # Threshold to add new keyframe
-kf_min_dis:         0.01
-kf_min_angle:       1
+kf_min_dis:         1.0
+kf_min_angle:       20
 refine_kf:          0
 
 # Optimization parameters
@@ -130,7 +130,7 @@ fuse_lidar:         1
 fuse_imu:           1
 fuse_poseprop:      0
 fuse_velprop:       0
-fuse_marg:          1
+fuse_marg:          0
 
 regularize_imu:     0
 imu_init_time:      0.5

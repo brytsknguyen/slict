@@ -2,8 +2,8 @@
 
       <arg name="publish_clock" default="--clock"/>
       <arg name="autorun"       default="1"/>
-      <arg name="loop_en"       default="1"/>
-      <arg name="show_report"   default="1"/>
+      <arg name="loop_en"       default="0"/>
+      <arg name="show_report"   default="0"/>
 
       <!-- Enable prior map -->
       <arg name="use_prior_map" default="1"/>
@@ -24,10 +24,11 @@
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_day_06/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_day_09/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_day_10/*.bag"/> -->
-      <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_night_05/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_night_01/*.bag"/> -->
-      <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_day_03/*.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_night_04/*.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_night_05/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_day_02/*.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_day_03/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_day_04/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_night_07/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/tuhh_night_08/*.bag"/> -->
@@ -52,39 +53,43 @@
       <!-- <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/UnpublishedSequences/ntu_night_12/*.bag"/> -->
 
       <!-- Manual initialization for reloc -->
-      <group if="$(eval 'ntu_day_01' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 49.28,   107.38,  7.58, -41,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 61.99,   119.58,  7.69, -134, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 62.82,   119.51,  7.70, 39,   0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_04' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 55.52,   110.70,  7.72, -40,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_05' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 59.18,   116.06,  7.72, 42,   0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_06' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 48.67,   109.16,  7.64, -28,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_07' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [-27.11,   -1.57,   8.73, -8,   0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_08' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 40.58,   15.90,   6.56, 48,   0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_09' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 71.90,   57.99,   7.67, 80,   0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_10' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 39.49,   23.48,   6.54, 36,   0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_01' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 49.28,   107.38,  7.58,  -41,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 61.99,   119.58,  7.69,  -134, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 62.82,   119.51,  7.70,   39,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_04' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 55.52,   110.70,  7.72,  -40,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_05' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 59.18,   116.06,  7.72,   42,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_06' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 48.67,   109.16,  7.64,  -28,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_07' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [-27.11,   -1.57,   8.73,  -8,   0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_08' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 40.58,   15.90,   6.56,   48,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_09' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 71.90,   57.99,   7.67,   80,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_day_10' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 39.49,   23.48,   6.54,   36,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_01' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 59.69,   108.43,  7.82,  -36,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_02' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 55.78,   108.37,  7.78,  -32,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_03' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 143.28,  36.80,   8.97,  -136, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_04' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 244.20, -99.86,   5.97,  -32,  0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_05' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 85.37,   73.99,   7.77,  -132, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_06' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 46.02,   21.03,   6.6,   -135, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_07' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 55.97,   112.70,  7.75,  -36,  0, 0] </rosparam> </group>
+      <!-- <group if="$(eval 'ntu_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 195.74, -8.57,    7.18,   135, 0, 0] </rosparam> </group> -->
+      <group if="$(eval 'ntu_night_09' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 234.26, -41.31,   6.69,  -107, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_10' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 194.55, -216.91, -3.69,   176, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_11' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 15.34,  -197.79, -4.99,   124, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_12' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 60.77,  -45.23,   2.2,   -139, 0, 0] </rosparam> </group>
+      <group if="$(eval 'ntu_night_13' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 81.38,  -18.45,   3.43,   42,  0, 0] </rosparam> </group>
 
-      <group if="$(eval 'ntu_night_01' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 59.69,   108.43,  7.82, -36,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_02' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 55.78,   108.37,  7.78, -32,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_03' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 143.28,  36.80,   8.97, -136, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_04' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 244.20, -99.86,   5.97, -32,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_05' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 85.37,   73.99,   7.77, -132, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_06' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 46.02,   21.03,   6.6,  -135, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_07' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 55.97,   112.70,  7.75, -36,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 195.74, -8.57,    7.18,  135, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_09' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 234.26, -41.31,   6.69, -107, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_10' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 194.55, -216.91, -3.69,  176, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_11' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 15.34,  -197.79, -4.99,  124, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_12' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 60.77,  -45.23,   2.2,  -139, 0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_13' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 81.38,  -18.45,   3.43,  42,  0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_day_06' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 64.41,   66.48,   38.50,  144, 0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_day_09' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 70.40,   63.12,   38.30, -26,  0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_day_10' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 69.13,   63.57,   38.38,  145, 0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_night_01' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 68.84,  -64.10,   38.43,  138, 0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_night_04' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 71.47,   63.56,   38.37, -52,  0, 0] </rosparam> </group>
+      <group if="$(eval 'kth_night_05' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 43.81, -131.66,   29.42,  76,  0, 0] </rosparam> </group>
 
-      <!-- <group if="$(eval 'kth_night_05' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [43.81, -131.66, 29.41, 76, 0, 1] </rosparam> </group> -->
-
-      <!-- <group if="$(eval 'tuhh_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [43.62, 446.53, 14.59, -162, 0, 0] </rosparam> </group> -->
-      <!-- <group if="$(eval 'tuhh_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [45.73, 447.10, 14.69, -157, 0, 0] </rosparam> </group> -->
-      <!-- <group if="$(eval 'tuhh_day_04' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [35.15, 114.94, -1.3,  -130, 0, 0] </rosparam> </group> -->
-      <!-- <group if="$(eval 'tuhh_night_07' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [43.87, 447.10, 14.59, -138, 0, 0] </rosparam> </group> -->
-      <!-- <group if="$(eval 'tuhh_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [42.93, 446.72, 14.63, -143, 0, 0] </rosparam> </group> -->
-      <!-- <group if="$(eval 'tuhh_night_09' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [32.47, 111.61, -1.42, -149, 0, 0] </rosparam> </group> -->
+      <group if="$(eval 'tuhh_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 45.73,  447.10,  14.69, -157, 0, 0] </rosparam> </group>
+      <group if="$(eval 'tuhh_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 43.62,  446.53,  14.59, -162, 0, 0] </rosparam> </group>
+      <group if="$(eval 'tuhh_day_04' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 35.15,  114.94, -1.3,   -130, 0, 0] </rosparam> </group>
+      <group if="$(eval 'tuhh_night_07' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 43.87,  447.10,  14.59, -138, 0, 0] </rosparam> </group>
+      <group if="$(eval 'tuhh_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 42.93,  446.72,  14.63, -143, 0, 0] </rosparam> </group>
+      <group if="$(eval 'tuhh_night_09' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 32.47,  111.61, -1.42,  -149, 0, 0] </rosparam> </group>
 
       <!-- Chose the config file based on the sequence names -->
       <arg name="config_file" value="$(find slict)/config/mcdviral_atv.yaml" if="$(eval 'ntu_'  in bag_file)" />
@@ -92,9 +97,9 @@
       <arg name="config_file" value="$(find slict)/config/mcdviral_hhs.yaml" if="$(eval 'tuhh_' in bag_file)" />
 
       <!-- Priormap file -->
-      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMap/NTUCampus/nkcamp_prior_splio" if="$(eval 'ntu_'  in bag_file)" />
-      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMap/KTHCampus/kth_prior_splio"    if="$(eval 'kth_'  in bag_file)" />
-      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMap/TUHHCampus/tuhh_prior_splio"  if="$(eval 'tuhh_' in bag_file)" />
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/NTU"  if="$(eval 'ntu_'  in bag_file)" />
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/KTH"  if="$(eval 'kth_'  in bag_file)" />
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/TUHH" if="$(eval 'tuhh_' in bag_file)" />
 
       <!-- STD descriptor for relocalization -->
       <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/ntu_day_01/saved_descriptors/"  if="$(eval 'ntu_'  in bag_file)" />

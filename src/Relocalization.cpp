@@ -33,13 +33,57 @@
 #include "STDesc.h"
 #include "utility.h"
 
-#include "factor/PoseFactorAnalytic.h"
+#include <ceres/ceres.h>
 #include "PoseLocalParameterization.h"
 
 // Shorthands
 typedef sensor_msgs::PointCloud2::ConstPtr rosCloudMsgPtr;
 typedef sensor_msgs::PointCloud2 rosCloudMsg;
 typedef Sophus::SO3d SO3d;
+
+// Define the pose factor for this module
+class PoseFactorAnalytic : public ceres::SizedCostFunction<6, 7>
+{
+public:
+    PoseFactorAnalytic() = delete;
+    PoseFactorAnalytic(const Vector3d &pbar_, const Quaternd &qbar_, double wp_ = 1.0, double wq_ = 1.0)
+    : pbar(pbar_), qbar(qbar_), wp(wp_), wq(wq_)
+    {}
+
+    virtual bool Evaluate(double const *const *parameters, double *residuals, double **jacobians) const
+    {
+        Vector3d Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
+        Quaternd Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
+
+        Eigen::AngleAxis<double> Phir(qbar.inverse() * Qi);
+
+        Eigen::Map<Eigen::Matrix<double, 6, 1>> residual(residuals);
+        residual.block<3, 1>(0, 0) = wp*(Pi - pbar);
+        residual.block<3, 1>(3, 0) = wq*Phir.axis()*Phir.angle();
+        
+        if (jacobians)
+        {
+            if (jacobians[0])
+            {
+                Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::RowMajor>> jacobian_pose_i(jacobians[0]);
+                jacobian_pose_i.setZero();
+
+                jacobian_pose_i.block<3, 3>(0, 0) = Vector3d(wp, wp, wp).asDiagonal();
+                jacobian_pose_i.block<3, 3>(3, 0) = wq *Util::SO3JrightInv(Phir);
+            }
+        }
+
+        return true;
+    }
+    // void Check(double **parameters);
+
+private:
+    Vector3d pbar;
+    Quaternd qbar;
+
+    double wp;
+    double wq;
+};
 
 // Groupings for next calculations
 struct RelocStat
