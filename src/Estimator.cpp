@@ -760,6 +760,10 @@ public:
             reloc_init = std::thread(&Estimator::PublishManualReloc, this, reloc_pose);
         }
 
+        // The name of the keyframe cloud
+        string priormap_kfprefix = "cloud";
+        nh_ptr->param("/priormap_kfprefix", priormap_kfprefix, string("cloud"));
+
         // Downsampling rate for visualizing the priormap
         nh_ptr->param("/priormap_viz_res", priormap_viz_res, 0.2);
 
@@ -804,7 +808,7 @@ public:
             for (int i = 0; i < PM_KF_COUNT; i++)
             {
                 pmFull[i] = CloudXYZIPtr(new CloudXYZI());
-                string pmFull_ = prior_map_dir + "/pointclouds/cloud_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
+                string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
                 pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
 
                 printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
@@ -858,7 +862,7 @@ public:
             priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(prior_map_dir + "/ufo_surf_map.um"));
 
             // Merge and downsample the prior map for visualization in another thread
-            auto pmVizFunctor = [this](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
+            auto pmVizFunctor = [this, priormap_kfprefix](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
             {
                 // Reading the surf feature from log
                 pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
@@ -866,7 +870,7 @@ public:
                 for (int i = 0; i < PM_KF_COUNT; i++)
                 {
                     pmFull[i] = CloudXYZIPtr(new CloudXYZI());
-                    string pmFull_ = prior_map_dir + "/pointclouds/cloud_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
+                    string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
                     pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
 
                     printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());

@@ -1,34 +1,34 @@
 /**
-* This file is part of splio.
+* This file is part of slict.
 * 
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
 * 
 * For more information please see <https://britsknguyen.github.io>.
-* or <https://github.com/brytsknguyen/splio>.
+* or <https://github.com/brytsknguyen/slict>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
 * 
-* splio is free software: you can redistribute it and/or modify
+* slict is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
 * 
-* splio is distributed in the hope that it will be useful,
+* slict is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
 * 
 * You should have received a copy of the GNU General Public License
-* along with splio.  If not, see <http://www.gnu.org/licenses/>.
+* along with slict.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 //
 // Created by Thien-Minh Nguyen on 01/08/22.
 //
 
-#include "splio/FeatureCloud.h"
+#include "slict/FeatureCloud.h"
 
 #include "STDesc.h"
 #include "utility.h"
@@ -172,13 +172,13 @@ public:
 
     }
 
-    void PCHandler(const splio::FeatureCloud::ConstPtr &msg)
+    void PCHandler(const slict::FeatureCloud::ConstPtr &msg)
     {
         if(go_to_sleep)
             return;
 
         // Stash the pointclouds
-        static deque<splio::FeatureCloud::ConstPtr> msg_stash;
+        static deque<slict::FeatureCloud::ConstPtr> msg_stash;
         msg_stash.push_back(msg);
 
         CloudXYZIPtr lastKfCloud;
