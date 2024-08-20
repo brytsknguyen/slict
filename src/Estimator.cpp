@@ -796,74 +796,13 @@ public:
         int PM_KF_COUNT = pmPose->size();
         printf(KGRN "Prior map path %s. Num scans: %d. Begin loading ...\n" RESET, pmPose_.c_str(), pmPose->size());
         
-        pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
-
-        if (!std::filesystem::exists(prior_map_dir + "/ufo_surf_map.um"))
+        // pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
+        if(use_ufm)
         {
-            printf("Prebuilt UFO surf map not found, creating one.\n");
-
-            // Reading the surf feature from log
-            pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
-            #pragma omp parallel for num_threads(MAX_THREADS)
-            for (int i = 0; i < PM_KF_COUNT; i++)
+            if (!std::filesystem::exists(prior_map_dir + "/ufo_surf_map.um"))
             {
-                pmFull[i] = CloudXYZIPtr(new CloudXYZI());
-                string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
-                pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+                printf("Prebuilt UFO surf map not found, creating one.\n");
 
-                printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
-            }
-
-            pmLoaded = true;
-            
-            printf("Merging the scans:\n");
-
-            // Merge the scans
-            for (int i = 0; i < PM_KF_COUNT; i++)
-            {
-                *priorMap += *pmFull[i];
-                printf("Scan %s merged\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
-            }
-
-            printf("Surfelizing the prior map.\n");
-
-            priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(leaf_size, surfel_map_depth));
-            insertCloudToSurfelMap(*priorSurfelMapPtr, *priorMap);
-
-            // Downsample the prior map for visualization in another thread
-            auto pmVizFunctor = [this](const CloudXYZIPtr& priorMap_)->void
-            {
-                // CloudXYZI priorMapDS;
-                pcl::UniformSampling<PointXYZI> downsampler;
-                downsampler.setRadiusSearch(priormap_viz_res);
-                downsampler.setInputCloud(priorMap);
-                downsampler.filter(*priorMap);
-
-                Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
-
-                if (!refine_reloc_tf)
-                {
-                    for(auto &cloud : pmFull)
-                        cloud->clear();
-                }
-                
-                return;
-            };
-            initPriorMapThread = std::thread(pmVizFunctor, std::ref(priorMap));
-
-           printf("Save the prior map...\n");
-
-           // Save the ufomap object
-           priorSurfelMapPtr->write(prior_map_dir + "/ufo_surf_map.um");
-        }
-        else
-        {
-            printf("Prebuilt UFO surf map found, loading...\n");
-            priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(prior_map_dir + "/ufo_surf_map.um"));
-
-            // Merge and downsample the prior map for visualization in another thread
-            auto pmVizFunctor = [this, priormap_kfprefix](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
-            {
                 // Reading the surf feature from log
                 pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
                 #pragma omp parallel for num_threads(MAX_THREADS)
@@ -873,17 +812,189 @@ public:
                     string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
                     pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
 
-                    printf("Reading scan %s.\n", zeroPaddedString(i, PM_KF_COUNT).c_str());
+                    // Filter the pointclouds
+                    CloudXYZIPtr temp(new CloudXYZI());
+                    for(auto &point : pmFull[i]->points)
+                    {
+                        if (Util::PointIsValid(point) && Util::pointDistanceSq(point) != 0)
+                            temp->push_back(point);
+                        else
+                            printf(KRED "Invalid points: %f, %f, %f\n" RESET, point.x, point.y, point.z);
+                    }
+
+                    printf("Reading scan %s. Valid: %7.3d / %7.3d (%4.0f%%).\n", 
+                            pmFull_.c_str(), temp->size(), pmFull[i]->size(), temp->size()*100 / pmFull[i]->size());
+                    pmFull[i] = temp;
                 }
 
                 pmLoaded = true;
-                
+
+                printf("\n");
+                printf("Merging the scans:\n");
+
+                Vector3d pmPointMin(FLT_MAX, FLT_MAX, FLT_MAX), pmPointMax(FLT_MIN, FLT_MIN, FLT_MIN);
+
                 // Merge the scans
-                for (int i = 0; i < pmFull.size(); i++)
+                for (int i = 0; i < PM_KF_COUNT; i++)
                 {
                     *priorMap += *pmFull[i];
-                    // printf("Map size: %d\n", priorMap->size());
+
+                    for(auto &point : pmFull[i]->points)
+                    {
+                        pmPointMin.x() = min(pmPointMin.x(), (double)point.x);
+                        pmPointMin.y() = min(pmPointMin.y(), (double)point.y);
+                        pmPointMin.z() = min(pmPointMin.z(), (double)point.z);
+
+                        pmPointMax.x() = max(pmPointMax.x(), (double)point.x);
+                        pmPointMax.y() = max(pmPointMax.y(), (double)point.y);
+                        pmPointMax.z() = max(pmPointMax.z(), (double)point.z);                    
+                    }
+
+                    printf("Scan %s of %d points merged. Bounds: %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f\n",
+                            zeroPaddedString(i, PM_KF_COUNT).c_str(), pmFull[i]->size(),
+                            pmPointMin.x(), pmPointMin.y(), pmPointMin.z(),
+                            pmPointMax.x(), pmPointMax.y(), pmPointMax.z());
                 }
+
+                printf("Surfelizing the prior map of %d points.\n", priorMap->size());
+
+                priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(leaf_size, surfel_map_depth));
+                insertCloudToSurfelMap(*priorSurfelMapPtr, *priorMap);
+
+                // Downsample the prior map for visualization in another thread
+                auto pmVizFunctor = [this](const CloudXYZIPtr& priorMap_)->void
+                {
+                    // CloudXYZI priorMapDS;
+                    pcl::UniformSampling<PointXYZI> downsampler;
+                    downsampler.setRadiusSearch(priormap_viz_res);
+                    downsampler.setInputCloud(priorMap);
+                    downsampler.filter(*priorMap);
+
+                    Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
+
+                    if (!refine_reloc_tf)
+                    {
+                        for(auto &cloud : pmFull)
+                            cloud->clear();
+                    }
+
+                    return;
+                };
+
+                initPriorMapThread = std::thread(pmVizFunctor, std::ref(priorMap));
+
+                printf("Prior Map built %d. Save the prior map...\n", priorSurfelMapPtr->size());
+
+                // Save the ufomap object
+                priorSurfelMapPtr->write(prior_map_dir + "/ufo_surf_map.um");
+            }
+            else
+            {
+                printf("Prebuilt UFO surf map found, loading...\n");
+                priorSurfelMapPtr = ufoSurfelMapPtr(new ufoSurfelMap(prior_map_dir + "/ufo_surf_map.um"));
+
+                // Merge and downsample the prior map for visualization in another thread
+                auto pmVizFunctor = [this, priormap_kfprefix](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
+                {
+                    // Reading the surf feature from log
+                    pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
+                    #pragma omp parallel for num_threads(MAX_THREADS)
+                    for (int i = 0; i < PM_KF_COUNT; i++)
+                    {
+                        pmFull[i] = CloudXYZIPtr(new CloudXYZI());
+                        string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
+                        pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+
+                        printf("Reading scan %s.\n", pmFull_.c_str());
+                    }
+
+                    pmLoaded = true;
+
+                    // Merge the scans
+                    for (int i = 0; i < pmFull.size(); i++)
+                    {
+                        *priorMap += *pmFull[i];
+                        // printf("Map size: %d\n", priorMap->size());
+                    }
+
+                    // CloudXYZI priorMapDS;
+                    pcl::UniformSampling<PointXYZI> downsampler;
+                    downsampler.setRadiusSearch(priormap_viz_res);
+                    downsampler.setInputCloud(priorMap);
+                    downsampler.filter(*priorMap);
+
+                    Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
+
+                    if (!refine_reloc_tf)
+                    {
+                        for(auto &cloud : pmFull)
+                            cloud->clear();
+                    }
+
+                    return;
+                };
+
+                initPriorMapThread = std::thread(pmVizFunctor, prior_map_dir, PM_KF_COUNT, std::ref(priorMap));
+            }
+        }
+        else
+        {
+            if (!std::filesystem::exists(prior_map_dir + "/priormap.pcd"))
+            {
+                printf("Prebuilt pcd not found, creating one.\n");
+
+                // Reading the surf feature from log
+                pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
+                #pragma omp parallel for num_threads(MAX_THREADS)
+                for (int i = 0; i < PM_KF_COUNT; i++)
+                {
+                    pmFull[i] = CloudXYZIPtr(new CloudXYZI());
+                    string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
+                    pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+
+                    // Filter the pointclouds
+                    CloudXYZIPtr temp(new CloudXYZI());
+                    for(auto &point : pmFull[i]->points)
+                    {
+                        if (Util::PointIsValid(point) && Util::pointDistanceSq(point) != 0)
+                            temp->push_back(point);
+                        else
+                            printf(KRED "Invalid points: %f, %f, %f\n" RESET, point.x, point.y, point.z);
+                    }
+
+                    printf("Reading scan %s. Valid: %7.3d / %7.3d (%4.0f%%).\n", 
+                            pmFull_.c_str(), temp->size(), pmFull[i]->size(), temp->size()*100 / pmFull[i]->size());
+                    pmFull[i] = temp;
+                }
+
+                printf("\n");
+                printf("Merging the scans:\n");
+
+                Vector3d pmPointMin(FLT_MAX, FLT_MAX, FLT_MAX), pmPointMax(FLT_MIN, FLT_MIN, FLT_MIN);
+
+                // Merge the scans
+                for (int i = 0; i < PM_KF_COUNT; i++)
+                {
+                    *priorMap += *pmFull[i];
+
+                    for(auto &point : pmFull[i]->points)
+                    {
+                        pmPointMin.x() = min(pmPointMin.x(), (double)point.x);
+                        pmPointMin.y() = min(pmPointMin.y(), (double)point.y);
+                        pmPointMin.z() = min(pmPointMin.z(), (double)point.z);
+
+                        pmPointMax.x() = max(pmPointMax.x(), (double)point.x);
+                        pmPointMax.y() = max(pmPointMax.y(), (double)point.y);
+                        pmPointMax.z() = max(pmPointMax.z(), (double)point.z);                    
+                    }
+
+                    printf("Scan %s of %d points merged. Bounds: %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f\n",
+                            zeroPaddedString(i, PM_KF_COUNT).c_str(), pmFull[i]->size(),
+                            pmPointMin.x(), pmPointMin.y(), pmPointMin.z(),
+                            pmPointMax.x(), pmPointMax.y(), pmPointMax.z());
+                }
+
+                printf("Building ikdtree prior map of %d points.\n", priorMap->size());
 
                 // CloudXYZI priorMapDS;
                 pcl::UniformSampling<PointXYZI> downsampler;
@@ -898,22 +1009,74 @@ public:
                     for(auto &cloud : pmFull)
                         cloud->clear();
                 }
-                
-                return;
-            };
-            initPriorMapThread = std::thread(pmVizFunctor, prior_map_dir, PM_KF_COUNT, std::ref(priorMap));
+
+                // Build the ikdtree
+                priorikdtMapPtr = ikdtreePtr(new ikdtree(0.5, 0.6, leaf_size));
+                priorikdtMapPtr->Build(priorMap->points);
+
+                pmLoaded = true;
+
+                printf("Prior Map built %d. Save the prior map...\n", priorikdtMapPtr->size());
+
+                // Save the fullmap pcd
+                pcl::io::savePCDFileBinary(prior_map_dir + "/priormap.pcd", *priorMap);
+            }
+            else
+            {
+                printf("Prebuilt pcd map found, loading...\n");
+
+                // Load the map
+                pcl::io::loadPCDFile<PointXYZI>(prior_map_dir + "/priormap.pcd", *priorMap);;
+
+                // Build the ikdtree
+                priorikdtMapPtr = ikdtreePtr(new ikdtree(0.5, 0.6, leaf_size));
+                priorikdtMapPtr->Build(priorMap->points);
+               
+                // Merge and downsample the prior map for visualization in another thread
+                auto pmVizFunctor = [this, priormap_kfprefix](string prior_map_dir, int PM_KF_COUNT, CloudXYZIPtr& priorMap_)->void
+                {
+                    // Reading the surf feature from log
+                    pmFull = deque<CloudXYZIPtr>(PM_KF_COUNT);
+                    #pragma omp parallel for num_threads(MAX_THREADS)
+                    for (int i = 0; i < PM_KF_COUNT; i++)
+                    {
+                        pmFull[i] = CloudXYZIPtr(new CloudXYZI());
+                        string pmFull_ = prior_map_dir + "/pointclouds/" + priormap_kfprefix + "_" + zeroPaddedString(i, PM_KF_COUNT) + ".pcd";
+                        pcl::io::loadPCDFile<PointXYZI>(pmFull_, *pmFull[i]);
+
+                        printf("Reading scan %s.\n", pmFull_.c_str());
+                    }
+
+                    pmLoaded = true;
+
+                    // // Merge the scans
+                    // for (int i = 0; i < pmFull.size(); i++)
+                    // {
+                    //     *priorMap += *pmFull[i];
+                    //     // printf("Map size: %d\n", priorMap->size());
+                    // }
+
+                    // // CloudXYZI priorMapDS;
+                    // pcl::UniformSampling<PointXYZI> downsampler;
+                    // downsampler.setRadiusSearch(priormap_viz_res);
+                    // downsampler.setInputCloud(priorMap);
+                    // downsampler.filter(*priorMap);
+
+                    Util::publishCloud(priorMapPub, *priorMap, ros::Time::now(), "map");
+
+                    if (!refine_reloc_tf)
+                    {
+                        for(auto &cloud : pmFull)
+                            cloud->clear();
+                    }
+
+                    return;
+                };
+
+                initPriorMapThread = std::thread(pmVizFunctor, prior_map_dir, PM_KF_COUNT, std::ref(priorMap));
+            }
         }
-
-        // printf(KYEL "Surfelizing the scans.\n" RESET);
-
-        // // Surfelize the surf map
-        // surfelMapSurf = ufoSurfelMap(leaf_size);
-        // insertCloudToSurfelMap(surfelMapSurf, *pmSurfGlobal);
-
-        // // Surfelize the edge map
-        // surfelMapEdge = ufoSurfelMap(leaf_size);
-        // insertCloudToSurfelMap(surfelMapEdge, *pmEdgeGlobal);
-
+        
         printf(KGRN "Done. Time: %f\n" RESET, tt_initprior.Toc());
 
         // pmVizTimer = nh_ptr->createTimer(ros::Duration(5.0), &Estimator::PublishPriorMap, this);
