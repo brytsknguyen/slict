@@ -93,7 +93,7 @@ score_min:          0.0
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      2
+                      8
                       ,
                       1
                     ]

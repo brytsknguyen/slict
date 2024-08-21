@@ -52,7 +52,7 @@
       <!-- <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/UnpublishedSequences/ntu_night_11/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/UnpublishedSequences/ntu_night_12/*.bag"/> -->
 
-      <!-- Manual initialization for reloc -->
+      <!-- Manual initialization for reloc, comment out the sequence's initial position if you want to use STD for relocalization -->
       <group if="$(eval 'ntu_day_01' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 49.28,   107.38,  7.58,  -41,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 61.99,   119.58,  7.69,  -134, 0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 62.82,   119.51,  7.70,   39,  0, 0] </rosparam> </group>
@@ -102,6 +102,7 @@
       <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/TUHH" if="$(eval 'tuhh_' in bag_file)" />
 
       <!-- STD descriptor for relocalization -->
+      <!-- Downloadable at https://drive.google.com/drive/u/1/folders/1Sl1gGZqDXZzKPbB2XHr6h8jN-S5D9fO1 -->
       <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/ntu_day_01/saved_descriptors/"  if="$(eval 'ntu_'  in bag_file)" />
       <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/kth_day_06/saved_descriptors/"  if="$(eval 'kth_'  in bag_file)" />
       <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/tuhh_day_03/saved_descriptors/" if="$(eval 'tuhh_' in bag_file)" />
