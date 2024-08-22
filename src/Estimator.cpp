@@ -107,7 +107,7 @@
 #include <ikdTree/ikd_Tree.h>
 
 // myGN solver
-#include "mySolver.h"
+#include "tmnSolver.h"
 #include "factor/GyroAcceBiasFactorTMN.hpp"
 #include "factor/Point2PlaneFactorTMN.hpp"
 
@@ -188,6 +188,9 @@ private:
     vector<int> deskew_method = {0, 0};
 
     bool use_ceres = true;
+
+    // Custom solver
+    tmnSolver* mySolver = NULL;
 
     // Sliding window data (prefixed "Sw" )
     struct TimeSegment
@@ -1900,6 +1903,9 @@ public:
                     SwDepVsAssoc[i].clear();
                 }
                 
+                // Update the priors of the prior factor
+                mySolver->RelocalizePrior(tf_Lprior_L0.getSE3());
+
                 // Change the map
                 {
                     lock_guard<mutex> lg(map_mtx);
@@ -2666,16 +2672,18 @@ public:
         Vector3d XBIG(sfBig.back().back());
         Vector3d XBIA(sfBia.back().back());
 
-        // Create a solver
-        static mySolver ms(nh_ptr);
+        // Create a custom solver
+        if(mySolver == NULL)
+            mySolver = new tmnSolver(nh_ptr);
+
         string iekf_report = "";
         bool ms_success = false;
 
         // Solve the least square problem
         if (!use_ceres)
-            ms_success = ms.Solve(traj, XBIG, XBIA, prev_knot_x, curr_knot_x, swNextBase, iter,
-                                  SwImuBundle, SwCloudDskDS, SwLidarCoef,
-                                  imuSelected, featureSelected, iekf_report, report, tlog);
+            ms_success = mySolver->Solve(traj, XBIG, XBIA, prev_knot_x, curr_knot_x, swNextBase, iter,
+                                          SwImuBundle, SwCloudDskDS, SwLidarCoef,
+                                          imuSelected, featureSelected, iekf_report, report, tlog);
 
         if (ms_success)
         {

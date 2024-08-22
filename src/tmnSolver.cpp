@@ -1,4 +1,4 @@
-#include "mySolver.h"
+#include "tmnSolver.h"
 
 // Define the size of the params, residual, and Jacobian
 #define XROT_SIZE  3                                        // Size of a control rot
@@ -76,10 +76,10 @@ bool GetBoolParam(ros::NodeHandlePtr &nh, string param, bool default_value)
 }
 
 // Destructor
-mySolver::~mySolver(){};
+tmnSolver::~tmnSolver(){};
 
 // Constructor
-mySolver::mySolver(ros::NodeHandlePtr &nh_) : nh(nh_)
+tmnSolver::tmnSolver(ros::NodeHandlePtr &nh_) : nh(nh_)
 {
     // IMU noise
     nh->getParam("/GYR_N", GYR_N);
@@ -126,7 +126,7 @@ mySolver::mySolver(ros::NodeHandlePtr &nh_) : nh(nh_)
 };
 
 // Change the size of variable dimension and observation dimension
-void mySolver::UpdateDimensions(int &imu_factors, int &ldr_factors, int knots)
+void tmnSolver::UpdateDimensions(int &imu_factors, int &ldr_factors, int knots)
 {
     // Local sizes of states
     XROT_BASE  = 0;
@@ -153,7 +153,7 @@ void mySolver::UpdateDimensions(int &imu_factors, int &ldr_factors, int knots)
 }
 
 // Evaluate the imu factors to update residual and jacobian.
-void mySolver::EvaluateImuFactors
+void tmnSolver::EvaluateImuFactors
 (
     PoseSplineX &traj, vector<SO3d> &xr, vector<Vector3d> &xp, Vector3d &xbg, Vector3d &xba,
     deque<deque<ImuSequence>> &SwImuBundle, vector<ImuIdx> &imuSelected, ImuBias imuBiasPrior,
@@ -207,7 +207,7 @@ void mySolver::EvaluateImuFactors
 }
 
 // Evaluate the lidar factors to update residual and jacobian
-void mySolver::EvaluateLdrFactors
+void tmnSolver::EvaluateLdrFactors
 (
     PoseSplineX &traj, vector<SO3d> &xr, vector<Vector3d> &xp,
     deque<CloudXYZIPtr> &SwCloudDskDS,
@@ -280,7 +280,7 @@ void mySolver::EvaluateLdrFactors
         *cost = pow(r.block(RESLDR_GBASE, 0, RESLDR_GSIZE, 1).norm(), 2);
 }
 
-void mySolver::EvaluatePriFactors
+void tmnSolver::EvaluatePriFactors
 (
     int                  &iter,
     map<int, int>        &prev_knot_x,
@@ -416,7 +416,7 @@ void mySolver::EvaluatePriFactors
     }
 }
 
-void mySolver::HbToJr(const MatrixXd &H, const VectorXd &b, MatrixXd &J, VectorXd &r)
+void tmnSolver::HbToJr(const MatrixXd &H, const VectorXd &b, MatrixXd &J, VectorXd &r)
 {
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(H);
     Eigen::VectorXd S = Eigen::VectorXd((saes.eigenvalues().array() > 0).select(saes.eigenvalues().array(), 0));
@@ -429,8 +429,17 @@ void mySolver::HbToJr(const MatrixXd &H, const VectorXd &b, MatrixXd &J, VectorX
     r = S_inv_sqrt.asDiagonal() * saes.eigenvectors().transpose() * b;
 }
 
+
+void tmnSolver::RelocalizePrior(SE3d tf)
+{
+    for (auto &se3 : xse3_keep)
+    {
+        se3 = tf*se3;
+    }
+}
+
 // Solving the problem
-bool mySolver::Solve
+bool tmnSolver::Solve
 (
     PoseSplineX               &traj,
     Vector3d                  &BIG,

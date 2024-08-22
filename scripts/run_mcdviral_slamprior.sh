@@ -49,9 +49,9 @@ SEQUENCES=(
             $DATASET_UNPUBLISHED/ntu_night_12
           )
 
-EPOC_DIR=/media/$USER/mySataSSD1/DATASETS/MCDVIRAL/Experiment/slict_slamprior
+EPOC_DIR=/media/$USER/mySataSSD1/DATASETS/MCDVIRAL/Experiment/slict_slamprior_2
 
-for n in {1..1}; do
+for n in {1..3}; do
 
   EPOC_DIR_N=${EPOC_DIR}/try_$n
 

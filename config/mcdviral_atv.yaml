@@ -130,7 +130,7 @@ fuse_lidar:         1
 fuse_imu:           1
 fuse_poseprop:      0
 fuse_velprop:       0
-fuse_marg:          0
+fuse_marg:          1
 
 regularize_imu:     0
 imu_init_time:      0.5

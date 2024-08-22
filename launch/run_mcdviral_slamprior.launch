@@ -20,7 +20,7 @@
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_02/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_10/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_night_04/*.bag"/> -->
-      <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_night_08/*.bag"/> -->
+      <arg  name="bag_file"  default="$(arg data_path)/ntu_night_08/*.bag"/>
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_night_13/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_day_06/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/kth_day_09/*.bag"/> -->

@@ -37,15 +37,15 @@ struct lidarFeaIdx
     int wdidx; int pointidx; int depth; int absidx;
 };
 
-class mySolver
+class tmnSolver
 {
 
 public:
     
     // Constructor
-    mySolver(ros::NodeHandlePtr &nh_);
+    tmnSolver(ros::NodeHandlePtr &nh_);
     // Destructor
-   ~mySolver();
+   ~tmnSolver();
 
     // Update the dimenstions of the optimization problem.
     void UpdateDimensions(int &imu_factors, int &ldr_factors, int knots);
@@ -105,7 +105,11 @@ public:
         slict::TimeLog            &tlog
     );
 
+    // Utility to convert between prior forms
     void HbToJr(const MatrixXd &H, const VectorXd &b, MatrixXd &J, VectorXd &r);
+
+    // Update the priors when there is a relocalization event
+    void RelocalizePrior(SE3d tf);
 
 private:
 

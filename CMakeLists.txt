@@ -114,7 +114,7 @@ include_directories(
 ## Declare a C++ library
 
 # Main LIO
-add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/mySolver.cpp src/PointToMapAssoc.cpp)
+add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/tmnSolver.cpp src/PointToMapAssoc.cpp)
 add_dependencies(${PROJECT_NAME}_estimator ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS})
 target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
