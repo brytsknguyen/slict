@@ -77,7 +77,7 @@ reassoc_rate:       0
 use_ceres:          0
 
 # Downsampling grid size, chose -1 for no downsampling
-leaf_size:          0.05          # Downsample scale of input pointcloud, also the scale of ufomap leaf
+leaf_size:          0.1           # Downsample scale of input pointcloud, also the scale of ufomap leaf
 assoc_spacing:      0.4
 surfel_map_depth:   16
 surfel_min_point:   5
@@ -136,7 +136,7 @@ regularize_imu:     0
 imu_init_time:      0.5
 lite_redeskew:      1
 max_outer_iters:    3
-max_lidar_factor:   4000  # Maximum number of lidar factors
+max_lidar_factor:   8000  # Maximum number of lidar factors
 dj_thres:           0.0
 dx_thres:           0.5
 

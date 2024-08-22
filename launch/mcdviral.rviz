@@ -7,10 +7,9 @@ Panels:
         - /Optimization1
         - /Optimization1/OptOdom1/Shape1
         - /Optimization1/PredictOdom1/Shape1
-        - /Map1
         - /Map1/KfCloud1
       Splitter Ratio: 0.5614035129547119
-    Tree Height: 441
+    Tree Height: 410
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -28,7 +27,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: KfPose
+    SyncSource: PriorMap
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -535,7 +534,7 @@ Visualization Manager:
           Marker Topic: /loop_marker
           Name: LoopPrior
           Namespaces:
-            loop_marker: true
+            {}
           Queue Size: 1
           Value: true
         - Alpha: 1
@@ -916,7 +915,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 14.295909881591797
+      Distance: 19.14592742919922
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -924,17 +923,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -0.09421633183956146
-        Y: 2.3248889446258545
-        Z: 1.912194875330897e-06
+        X: 5.948090553283691
+        Y: -2.457622528076172
+        Z: -1.6128524293890223e-07
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: -0.01460192259401083
+      Pitch: 0.46039843559265137
       Target Frame: body
-      Yaw: 4.708576679229736
+      Yaw: 5.943588733673096
     Saved: ~
 Window Geometry:
   Displays:

@@ -123,7 +123,7 @@
       <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
 
       <!-- Run the relocalization -->
-      <node if="$(eval use_prior_map > 0)" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+      <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
             <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
       </node>
 
