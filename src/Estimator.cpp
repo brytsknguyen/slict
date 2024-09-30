@@ -1966,6 +1966,10 @@ public:
 
             /* #endregion STEP 13: Transform everything to prior map frame ------------------------------------------*/
 
+            // Waiting for fit spline
+            if (threadFitSpline.joinable())
+                threadFitSpline.join();
+
             // Publish the loop time
             tlog.t_loop = tt_whileloop.Toc();
             static ros::Publisher tlog_pub = nh_ptr->advertise<slict::TimeLog>("/time_log", 100);
