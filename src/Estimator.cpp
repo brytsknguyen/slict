@@ -2721,7 +2721,7 @@ public:
                         if (fabs(ba[i]) > BAMAX[i])
                         {
                             ba_(i) = ba[i]/fabs(ba[i])*BAMAX[i];
-                            break;
+                            // break; // There is no need to break, need handle other dims.
                         }
                         else
                             ba_(i) = ba[i];
@@ -2732,7 +2732,7 @@ public:
                         if (fabs(bg[i]) > BGMAX[i])
                         {
                             bg_(i) = bg[i]/fabs(bg[i])*BGMAX[i];
-                            break;
+                            // break; // There is no need to break, need handle other dims.
                         }
                         else
                             bg_(i) = bg[i];
