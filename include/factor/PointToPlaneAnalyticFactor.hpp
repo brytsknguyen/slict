@@ -61,7 +61,7 @@ struct assocSettings
         surfel_min_plnrty  = surfel_min_plnrty_;
         surfel_intsect_rad = surfel_intsect_rad_;
         dis_to_surfel_max  = dis_to_surfel_max_;
-        lidar_weight       = lidar_weight;
+        lidar_weight       = lidar_weight_;
         factor_idx         = factor_idx_;        
     };
 
