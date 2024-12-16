@@ -3570,7 +3570,7 @@ public:
         if (CloudCoef.size() != pointsCount)
         {
             // Initialize the coefficent buffer
-            CloudCoef.reserve(pointsCount);
+            CloudCoef.resize(pointsCount);
         }
 
         // Create a static associator
