@@ -128,14 +128,7 @@ public:
         Vector3d delta[N];
         delta[0] = Rot[0].log();
         for (int j = 1; j < N; j++)
-        {
             delta[j] = (Rot[j - 1].inverse() * Rot[j]).log();
-            // if (isnan(delta[j].norm()))
-            // {
-            //     printf(KRED "delta[%d] is nan!" RESET, j);
-            //     delta[j] = Vector3d(0, 0, 0);
-            // }
-        }
 
         // Calculate the A terms: A(1) ... A(N-1), where A(j) = Log( lambda(j) * d(j) ), A(0) is an extension
         SO3d A[N];
@@ -156,6 +149,9 @@ public:
         for (int j = 1; j < N + 1; j++)
             omega[j] = A[j - 1].inverse() * omega[j - 1] + lambda_R_dot(j - 1) * delta[j - 1];
 
+        // Predicted gyro
+        Vector3d gyro = omega[N];
+
         // Predicted orientation from Rt^-1 = P(N-1)R(0)^-1
         SO3d R_W_Bt = (P[0] * Rot[0].inverse()).inverse();
 
@@ -163,9 +159,6 @@ public:
         // Vector3d p_inW_Bt(0, 0, 0);
         // for (int j = 0; j < N; j++)
         //     p_inW_Bt += lambda_P[j]*Pos[j];
-
-        // Predicted gyro
-        Vector3d gyro = omega[N];
 
         // Predicted acceleration
         Vector3d a_inW_Bt(0, 0, 0);

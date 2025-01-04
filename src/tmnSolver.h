@@ -21,7 +21,7 @@
 // myGN solver
 #include "factor/GyroAcceBiasFactorTMN.hpp"
 #include "factor/Point2PlaneFactorTMN.hpp"
-
+#include "factor/FlatGroundFactor.hpp"
 struct ImuIdx
 {
     ImuIdx(int &i_, int &j_, int &k_)
@@ -65,6 +65,13 @@ public:
         deque<CloudXYZIPtr> &SwCloudDskDS,
         deque<vector<LidarCoef>> &SwLidarCoef,
         vector<lidarFeaIdx> &featureSelected,
+        VectorXd &r, MatrixXd &J, double* cost
+    );
+
+    // Evaluate the flatground factors
+    void EvaluateFlatGroundFactors
+    (
+        PoseSplineX &traj, vector<SO3d> &xr, vector<Vector3d> &xp,
         VectorXd &r, MatrixXd &J, double* cost
     );
 
@@ -132,6 +139,9 @@ private:
 
     // Damping factor
     double lambda = 1.0;
+
+    // Forcing two estimate
+    bool flat_ground = false;
 
     // Fuse marginalization
     bool fuse_marg = false;

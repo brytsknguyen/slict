@@ -293,6 +293,7 @@ private:
     bool fuse_imu        = true;
     bool fuse_poseprop   = true;
     bool fuse_velprop    = true;
+    bool flat_ground     = true;
     
     bool snap_to_0180    = false;
     bool regularize_imu  = true;
@@ -627,8 +628,8 @@ public:
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::EIGEN;
         else if(linAlgbLib_ == "lapack")
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::LAPACK;
-        else if(linAlgbLib_ == "cuda")
-            linAlgbLib = ceres::DenseLinearAlgebraLibraryType::CUDA;
+        // else if(linAlgbLib_ == "cuda")
+        //     linAlgbLib = ceres::DenseLinearAlgebraLibraryType::CUDA;
         else
             linAlgbLib = ceres::DenseLinearAlgebraLibraryType::EIGEN;
         printf(KYEL "/linAlgbLib: %d. %s\n" RESET, linAlgbLib, linAlgbLib_.c_str());
@@ -645,6 +646,7 @@ public:
         fuse_imu       = GetBoolParam("/fuse_imu",       true);
         fuse_poseprop  = GetBoolParam("/fuse_poseprop",  true);
         fuse_velprop   = GetBoolParam("/fuse_velprop",   true);
+        flat_ground    = GetBoolParam("/flat_ground",    true);
 
         snap_to_0180   = GetBoolParam("/snap_to_0180",   false);
         regularize_imu = GetBoolParam("/regularize_imu", true);
@@ -1152,13 +1154,13 @@ public:
             CloudMatcher cm(0.1, 0.1);
 
             // Run ICP to find the relative pose
-            // Matrix4f tfm_Lprior_L0;
-            // double icpFitness = 0;
-            // double icpTime = 0;
-            // cm.CheckICP(localMap, KfCloudinW.back(), tf_Lprior_L0.cast<float>().tfMat(), tfm_Lprior_L0,
-            //             10, 10, 1.0, icpFitness, icpTime);
+            Matrix4f tfm_Lprior_L0;
+            double icpFitness = 0;
+            double icpTime = 0;
+            cm.CheckICP(localMap, KfCloudinW.back(), tf_Lprior_L0.cast<float>().tfMat(), tfm_Lprior_L0,
+                        10, 10, 1.0, icpFitness, icpTime);
             
-            // tf_Lprior_L0 = myTf(tfm_Lprior_L0).cast<double>();
+            tf_Lprior_L0 = myTf(tfm_Lprior_L0).cast<double>();
 
             // printf(KGRN "Refine the transform: %9.3f, %9.3f, %9.3f, %9.3f, %9.3f, %9.3f. Fitness: %f. Time: %f\n" RESET,
             //         tf_Lprior_L0.pos.x(), tf_Lprior_L0.pos.y(), tf_Lprior_L0.pos.z(),
@@ -1173,7 +1175,7 @@ public:
             // ioaOpt.fix_rot = fix_rot;
             // ioaOpt.fix_trans = fix_trans;
             IOASummary ioaSum;
-            cm.IterateAssociateOptimize(ioaOpt, ioaSum, localMap, KfCloudinW.back());
+            cm.IterateAssociateOptimize(ioaOpt, ioaSum, localMap, KfCloudinW.front());
 
             tf_Lprior_L0 = ioaSum.final_tf;
 
@@ -1691,11 +1693,13 @@ public:
                 }
                 else
                     report.tmapimg = -1;
-
-                Vector3d eul_est = Util::Quat2YPR(Quaternd(report.Qest.w, report.Qest.x, report.Qest.y, report.Qest.z));
-                Vector3d eul_imu = Util::Quat2YPR(Quaternd(report.Qest.w, report.Qest.x, report.Qest.y, report.Qest.z));
-                Vector3d Vest = Vector3d(report.Vest.x, report.Vest.y, report.Vest.z);
-                Vector3d Vimu = Vector3d(report.Vimu.x, report.Vimu.y, report.Vimu.z);
+                
+                Vector3d xyz_est = GlobalTraj->pose(GlobalTraj->maxTime() - 1.0e-3).translation();
+                Vector3d eul_est = Util::Quat2YPR(GlobalTraj->pose(GlobalTraj->maxTime() - 1.0e-3).so3().unit_quaternion());
+                Vector3d vel_est = GlobalTraj->transVelWorld(GlobalTraj->maxTime()- 1.0e-3);
+                Vector3d xyz_imu = sfPos.back().back();
+                Vector3d eul_imu = Util::Quat2YPR(sfQua.back().back());
+                Vector3d vel_imu = sfVel.back().back();
 
                 /* #region */
                 printout +=
@@ -1707,9 +1711,9 @@ public:
                              "Map: %d\n"
                              "J0:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
                              "JK:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
-                            //  "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
-                            //  "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f.\n"
-                            //  "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
+                             "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
+                             "Eimu: %7.2f, %7.2f, %7.2f. Pimu: %7.2f, %7.2f, %7.2f. Vimu: %7.2f, %7.2f, %7.2f.\n"
+                             "Eest: %7.2f, %7.2f, %7.2f. Pest: %7.2f, %7.2f, %7.2f. Vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
                              "DVA:  %s\n",
                              // Time and iterations
                              report.OptNum, report.OptNumSub, max_outer_iters,
@@ -1738,18 +1742,18 @@ public:
                              // Optimization final costs
                              report.JK, report.JKSurf, report.JKImu, report.JKProp, report.JKVel,
                              // Bias Estimate
-                            //  ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
-                            //  ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
-                            //  BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
-                             // Pose Estimate from propogation
-                            //  eul_imu.x(), eul_imu.y(), eul_imu.z(),
-                            //  report.Pimu.x, report.Pimu.y, report.Pimu.z,
-                            //  report.Vimu.x, report.Vimu.y, report.Vimu.z,
+                             ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
+                             ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                             BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
+                             //  Pose Estimate from propogation
+                             eul_imu.x(), eul_imu.y(), eul_imu.z(),
+                             xyz_imu.x(), xyz_imu.y(), xyz_imu.z(),
+                             vel_imu.x(), vel_imu.y(), vel_imu.z(),
                              // Pose Estimate from Optimization
-                            //  eul_est.x(), eul_est.y(), eul_est.z(),
-                            //  report.Pest.x, report.Pest.y, report.Pest.z,
-                            //  report.Vest.x, report.Vest.y, report.Vest.z,
-                            //  Vest.norm(), (Vest - Vimu).norm(),
+                             eul_est.x(), eul_est.y(), eul_est.z(),
+                             xyz_est.x(), xyz_est.y(), xyz_est.z(),
+                             vel_est.x(), vel_est.y(), vel_est.z(),
+                             vel_est.norm(), (vel_est - vel_imu).norm(),
                              // Report on the assocations at different scales
                              DVAReport.c_str())
                     : "\n";
@@ -2046,6 +2050,9 @@ public:
                         gyr_avr(0), gyr_avr(1), gyr_avr(2), gyr_buf.size(), acc_buf.size());
                 printf("Init YPR:  %.3f, %.3f, %.3f.\n", ypr(0), ypr(1), ypr(2));
 
+                if(flat_ground)
+                    q_init = Quaternd(1, 0, 0, 0);
+
                 // Initialize the original quaternion state
                 ssQua = sfQua = deque<deque<Quaternd>>(WINDOW_SIZE, deque<Quaternd>(N_SUB_SEG, q_init));
                 ssBig = sfBig = deque<deque<Vector3d>>(WINDOW_SIZE, deque<Vector3d>(N_SUB_SEG, gyr_avr));
@@ -2057,30 +2064,32 @@ public:
     
         if (!LIDAR_INITED)
         {
+            static CloudXYZIPtr kfCloud0(new CloudXYZI());
+
+            // Temp cloud from packet
             static CloudXYZITPtr kfCloud0_(new CloudXYZIT());
             pcl::fromROSMsg(packet->extracted_cloud, *kfCloud0_);
 
-            if(IMU_INITED)
-            {   
-                // Downsample the cached kf data
-                pcl::UniformSampling<PointXYZIT> downsampler;
-                downsampler.setRadiusSearch(leaf_size);
-                downsampler.setInputCloud(kfCloud0_);
-                downsampler.filter(*kfCloud0_);
+            // Downsample the cached kf data
+            pcl::UniformSampling<PointXYZIT> downsampler;
+            downsampler.setRadiusSearch(leaf_size);
+            downsampler.setInputCloud(kfCloud0_);
+            downsampler.filter(*kfCloud0_);
 
-                // Admitting only latest 0.09s part of the pointcloud
-                printf("PointTime: %f -> %f\n", kfCloud0_->points.front().t, kfCloud0_->points.back().t);
-                CloudXYZIPtr kfCloud0(new CloudXYZI());
-                for(PointXYZIT &p : kfCloud0_->points)
+            // Admitting only latest 0.09s part of the pointcloud
+            printf("PointTime: %f -> %f\n", kfCloud0_->points.front().t, kfCloud0_->points.back().t);
+            for(PointXYZIT &p : kfCloud0_->points)
+            {
+                if(p.t > kfCloud0_->points.back().t - 0.09)
                 {
-                    if(p.t > kfCloud0_->points.back().t - 0.09)
-                    {
-                        PointXYZI pnew;
-                        pnew.x = p.x; pnew.y = p.y; pnew.z = p.z; pnew.intensity = p.intensity;
-                        kfCloud0->push_back(pnew);   
-                    }
+                    PointXYZI pnew;
+                    pnew.x = p.x; pnew.y = p.y; pnew.z = p.z; pnew.intensity = p.intensity;
+                    kfCloud0->push_back(pnew);   
                 }
+            }
 
+            if(IMU_INITED)
+            {
                 // Key frame cloud in world
                 CloudXYZIPtr kfCloud0InW(new CloudXYZI());
                 pcl::transformPointCloud(*kfCloud0, *kfCloud0InW, Vector3d(0, 0, 0), sfQua[0].back());
@@ -2682,8 +2691,8 @@ public:
         // Solve the least square problem
         if (!use_ceres)
             ms_success = mySolver->Solve(traj, XBIG, XBIA, prev_knot_x, curr_knot_x, swNextBase, iter,
-                                          SwImuBundle, SwCloudDskDS, SwLidarCoef,
-                                          imuSelected, featureSelected, iekf_report, report, tlog);
+                                         SwImuBundle, SwCloudDskDS, SwLidarCoef,
+                                         imuSelected, featureSelected, iekf_report, report, tlog);
 
         if (ms_success)
         {
@@ -4874,6 +4883,8 @@ int main(int argc, char **argv)
     ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
     ROS_INFO(KGRN "----> Estimator Started." RESET);
+
+    pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Suppress warnings by pcl load
 
     Estimator estimator(nh_ptr);
 

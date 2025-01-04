@@ -723,6 +723,8 @@ int main(int argc, char **argv)
 
     ROS_INFO(KGRN "----> Sensor Sync Started." RESET);
 
+    pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Suppress warnings by pcl load
+
     SensorSync sensor_sync(nh_ptr);
 
     ros::MultiThreadedSpinner spinner(0);

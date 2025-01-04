@@ -1,0 +1,97 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun"       default="1"/>
+      <arg name="loop_en"       default="0"/>
+      <arg name="show_report"   default="1"/>
+
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="1"/>
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/root/slict_logs/laura"/>
+
+      <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
+      <!-- <arg name="data_path"       default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequences"/> -->
+      <arg name="data_path"       default="/root/LAURA/ros1_export"/>
+
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/alley_fast_north_south.bag"/> -->
+      <arg  name="bag_file"  default="$(arg data_path)/alley_loop_fast.bag"/>
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/alley_loop.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/grove_clockwise.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/grove_counterclockwise.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/town_clockwise.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/town_counterclockwise.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/town_courtyard_clockwise.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/town_trees_a_building.bag"/> -->
+
+      <!-- Manual initialization for reloc, comment out the sequence's initial position if you want to use STD for relocalization -->
+      <group if="$(eval 'alley_fast_north_south'   in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ -11.39,   419.87,  13.03,  161, 0,  0] </rosparam> </group>
+      <group if="$(eval 'alley_loop_fast.bag'      in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [  44.41,   238.03,  8.48,   88,  0,  0] </rosparam> </group>
+      <group if="$(eval 'alley_loop.bag'           in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [  11.53,   350.93,  8.38,   117, 0,  0] </rosparam> </group>
+      <group if="$(eval 'grove_clockwise'          in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [  6.63,    70.31,  -1.30,   44,  0,  0] </rosparam> </group>
+      <group if="$(eval 'grove_counterclockwise'   in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [  6.30,    70.06,  -1.28,  -134, 0,  0] </rosparam> </group>
+      <group if="$(eval 'town_clockwise'           in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ -0.55,    349.38,  8.43,   116, 0,  0] </rosparam> </group>
+      <group if="$(eval 'town_counterclockwise'    in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ -0.26,    349.06,  8.44,  -63,  0,  0] </rosparam> </group>
+      <group if="$(eval 'town_courtyard_clockwise' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [  22.22,   290.84,  8.57,   120, 0,  0] </rosparam> </group>
+      <group if="$(eval 'town_trees_a_building'    in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ -7.97,    417.03,  13.10, -15,  0,  0] </rosparam> </group>
+
+      <!-- Chose the config file based on the sequence names -->
+      <arg name="config_file" value="$(find slict)/config/laura.yaml"/>
+      
+      <!-- Priormap file -->
+      <arg name="prior_map_dir" default="/root/LAURA/priormap/TUHH"/>
+
+      <!-- STD descriptor for relocalization -->
+      <!-- Downloadable at https://drive.google.com/drive/u/1/folders/1Sl1gGZqDXZzKPbB2XHr6h8jN-S5D9fO1 -->
+      <arg name="descriptor_path" default=""/>
+      
+      <!-- Load the param -->
+      <rosparam file="$(arg config_file)" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the livox to ouster converter -->
+      <node pkg="slict" required="true" type="slict_velodyne_to_ouster" name="slict_velodyne_to_ouster" respawn="false" output="screen">
+            <remap from="/velodyne_points"  to="/laura_w/velodyne_points"/>
+      </node>
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
+
+      <!-- Run the relocalization -->
+      <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+            <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node>
+
+      <!-- Run the Estimator -->
+      <param name="/prior_map_dir"  type="string" value="$(arg prior_map_dir)" />
+      <param name="/use_prior_map"  type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report"    type="int"    value="$(arg show_report)"   />
+      <param name="/slam_ref_frame" type="string" value="odom"/>
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+      <!-- <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"
+            launch-prefix="gdb -ex run - -args"/> -->
+
+      <!-- Run the imu predictor -->
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz_slam" respawn="true" output="log"
+            args="-d $(find slict)/launch/laura.rviz" />
+
+      <!-- An offset time -->
+      <arg name="start_time" value="0"/>
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+      <arg name="wait_time" value="$(eval use_prior_map*10 + 1)" />
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s $(arg start_time)"
+            launch-prefix="bash -c 'sleep $(arg wait_time); $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>

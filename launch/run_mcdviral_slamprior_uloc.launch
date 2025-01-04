@@ -13,8 +13,8 @@
       <arg name="exp_log_dir" default="/home/$(env USER)/slict_logs/mcdviral"/>
 
       <!-- MCDVIRAL dataset, downloadable at mcdviral.github.io. -->
-      <!-- <arg name="data_path"       default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequences"/> -->
-      <arg name="data_path"       default="/media/tmn/mySataSSD11/DATASETS/MCDVIRAL/PublishedSequencesUnzipped"/>
+      <arg name="data_path"       default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequences"/>
+      <!-- <arg name="data_path"       default="/media/tmn/mySataSSD11/DATASETS/MCDVIRAL/PublishedSequencesUnzipped"/> -->
 
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_02/*.bag"/> -->
@@ -71,7 +71,7 @@
       <group if="$(eval 'ntu_night_05' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 49.30,  -1.27,    0.82,  -91,    0,  0] </rosparam> </group>
       <group if="$(eval 'ntu_night_06' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 54.74,  -66.52,  -0.47,  -94,    0,  0] </rosparam> </group>
       <group if="$(eval 'ntu_night_07' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 1.64,    8.36,    0.33,   5,     0,  0] </rosparam> </group>
-      <group if="$(eval 'ntu_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 186.8,   9.48,    3.61,   176,   0,  0] </rosparam> </group>
+      <!-- <group if="$(eval 'ntu_night_08' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 186.8,   9.48,    3.61,   176,   0,  0] </rosparam> </group> -->
       <group if="$(eval 'ntu_night_09' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 237.44,  9.77,    5.12,  -66,    0,  0] </rosparam> </group>
       <group if="$(eval 'ntu_night_10' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 322.44, -148.63, -0.88,  -142,   0,  0] </rosparam> </group>
       <group if="$(eval 'ntu_night_11' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 175.00, -252.22, -5.32,   165,   0,  0] </rosparam> </group>
@@ -98,7 +98,7 @@
       <!-- <arg name="config_file" value="$(find slict)/config/mcdviral_hhs.yaml" if="$(eval 'tuhh_' in bag_file)" /> -->
 
       <!-- Priormap file -->
-      <arg name="prior_map_dir" default="/media/tmn/Extreme/ntu_day_01_exp"  if="$(eval 'ntu_'  in bag_file)" />
+      <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapSLAM/NTU/ntu_day_01_exp"  if="$(eval 'ntu_'  in bag_file)" />
       <!-- <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/KTH"  if="$(eval 'kth_'  in bag_file)" /> -->
       <!-- <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/TUHH" if="$(eval 'tuhh_' in bag_file)" /> -->
 
@@ -115,7 +115,7 @@
       <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
 
       <!-- Run the livox to ouster converter -->
-      <node pkg="slict" required="true" type="slict_livox_to_ouster" name="slict_livox_to_ouster" respawn="false" output="log">
+      <node pkg="slict" required="true" type="slict_livox_to_ouster" name="slict_livox_to_ouster" respawn="false" output="screen">
             <!-- <remap from="/livox/lidar"  to="/livox/lidar_hybrid"/> -->
       </node>
 
@@ -123,8 +123,16 @@
       <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
 
       <!-- Run the relocalization -->
-      <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+      <!-- <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
             <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node> -->
+      <!-- Launch the ModelUWB node -->
+      <node name="ModelUWB" pkg="uwbreloc" type="ModelUWB.py" output="screen" required="false" respawn="true">
+            <param name="use_sim_time" value="false"/>
+      </node>
+      <!-- Launch the SyncUWB node -->
+      <node name="SyncUWB" pkg="uwbreloc" type="SyncUWB" required="false" respawn="true">
+            <param name="use_sim_time" value="false"/>
       </node>
 
       <!-- Run the Estimator -->
@@ -132,7 +140,7 @@
       <param name="/use_prior_map"  type="int"    value="$(arg use_prior_map)" />
       <param name="/show_report"    type="int"    value="$(arg show_report)"   />
       <param name="/slam_ref_frame" type="string" value="odom"/>
-      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+      <!-- <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/> -->
       <!-- <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"
             launch-prefix="gdb -ex run - -args"/> -->
 

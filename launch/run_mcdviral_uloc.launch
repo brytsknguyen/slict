@@ -3,7 +3,7 @@
       <arg name="publish_clock" default="--clock"/>
       <arg name="autorun"       default="1"/>
       <arg name="loop_en"       default="0"/>
-      <arg name="show_report"   default="1"/>
+      <arg name="show_report"   default="0"/>
 
       <!-- Enable prior map -->
       <arg name="use_prior_map" default="1"/>
@@ -15,8 +15,8 @@
       <!-- <arg name="data_path"       default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequences"/> -->
       <arg name="data_path"       default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PublishedSequencesUnzipped"/>
 
-      <arg  name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/>
-      <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_02/*.bag"/> -->
+      <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_01/*.bag"/> -->
+      <arg  name="bag_file"  default="$(arg data_path)/ntu_day_02/*.bag"/>
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_day_10/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_night_04/*.bag"/> -->
       <!-- <arg  name="bag_file"  default="$(arg data_path)/ntu_night_08/*.bag"/> -->
@@ -54,7 +54,7 @@
 
       <!-- Manual initialization for reloc, comment out the sequence's initial position if you want to use STD for relocalization -->
       <group if="$(eval 'ntu_day_01' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 49.28,   107.38,  7.58,  -41,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 61.99,   119.58,  7.69,  -134, 0, 0] </rosparam> </group>
+      <!-- <group if="$(eval 'ntu_day_02' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 61.99,   119.58,  7.69,  -134, 0, 0] </rosparam> </group> -->
       <group if="$(eval 'ntu_day_03' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 62.82,   119.51,  7.70,   39,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_04' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 55.52,   110.70,  7.72,  -40,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_05' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 59.18,   116.06,  7.72,   42,  0, 0] </rosparam> </group>
@@ -62,7 +62,7 @@
       <group if="$(eval 'ntu_day_07' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [-27.11,  -1.57,    8.73,  -8,   0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_08' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 40.58,   15.90,   6.56,   48,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_day_09' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 71.90,   57.99,   7.67,   80,  0, 0] </rosparam> </group>
-      <group if="$(eval 'ntu_day_10' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 39.49,   23.48,   6.54,   36,  0, 0] </rosparam> </group>
+      <!-- <group if="$(eval 'ntu_day_10' in bag_file)">    <rosparam param="/tf_Lprior_L0_init"> [ 39.49,   23.48,   6.54,   36,  0, 0] </rosparam> </group> -->
       <group if="$(eval 'ntu_night_01' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 59.69,   108.43,  7.82,  -36,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_night_02' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 55.78,   108.37,  7.78,  -32,  0, 0] </rosparam> </group>
       <group if="$(eval 'ntu_night_03' in bag_file)">  <rosparam param="/tf_Lprior_L0_init"> [ 143.28,  36.80,   8.97,  -136, 0, 0] </rosparam> </group>
@@ -104,6 +104,8 @@
       <!-- STD descriptor for relocalization -->
       <!-- Downloadable at https://drive.google.com/drive/u/1/folders/1Sl1gGZqDXZzKPbB2XHr6h8jN-S5D9fO1 -->
       <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/ntu_day_01/saved_descriptors/"  if="$(eval 'ntu_'  in bag_file)" />
+      <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/kth_day_06/saved_descriptors/"  if="$(eval 'kth_'  in bag_file)" />
+      <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/tuhh_day_03/saved_descriptors/" if="$(eval 'tuhh_' in bag_file)" />
       
       <!-- Load the param -->
       <rosparam file="$(arg config_file)" command="load"/>
@@ -121,9 +123,20 @@
       <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
 
       <!-- Run the relocalization -->
-      <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+      <!-- <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
             <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node> -->
+      <!-- Launch the SyncUWB node -->
+      <node pkg="uloc" name="uwb_sync" type="uwb_sync" required="false" respawn="true" output="screen">
+            <param name="use_sim_time" value="false"/>
       </node>
+      <!-- Launch the ModelUWB node -->
+      <node pkg="uloc" name="uloc_model" type="uloc_model.py" required="false" respawn="true" output="screen">
+            <param name="use_sim_time" value="false"/>
+      </node>
+      <!-- Launch the Reloc node -->
+      <node pkg="uloc" name="uwb_reloc" type="uloc_reloc.py" required="false" respawn="true" output="screen"></node>
+      <!-- <remap from="/reloc_pose" to="/uwb_pose"/> -->
 
       <!-- Run the Estimator -->
       <param name="/prior_map_dir"  type="string" value="$(arg prior_map_dir)" />
@@ -135,15 +148,15 @@
             launch-prefix="gdb -ex run - -args"/> -->
 
       <!-- Run the imu predictor -->
-      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="log"/>
 
       <!--- Run Rviz-->
       <node pkg="rviz" type="rviz" name="rviz_slam" respawn="true" output="log"
             args="-d $(find slict)/launch/mcdviral.rviz" />
 
       <!-- An offset time -->
-      <arg name="start_time" value="0" if="$(eval 'ntu_day_10' in bag_file)"/>
-      <arg name="start_time" value="0" if="$(eval 'ntu_day_10' not in bag_file)"/>
+      <arg name="start_time" value="13" if="$(eval 'ntu_day_02' in bag_file)"/>
+      <arg name="start_time" value="1"  if="$(eval 'ntu_day_10' in bag_file)"/>
 
       <!-- Play the bag file -->
       <param name="/use_sim_time" value="false" />

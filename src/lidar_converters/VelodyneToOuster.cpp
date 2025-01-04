@@ -86,17 +86,23 @@ public:
         CloudVelodyne laserCloudVelodyne;
         pcl::fromROSMsg(*msgIn, laserCloudVelodyne);
 
-        int cloudsize = laserCloudVelodyne.size();
+        // Sort the pointcloud by stamp
+        std::sort(laserCloudVelodyne.points.begin(), laserCloudVelodyne.points.end(),
+                  [](const PointVelodyne& pa, const PointVelodyne& pb)
+                  { return pa.time < pb.time; });
 
+        double headerStamp = msgIn->header.stamp.toSec();
+        double timebase = laserCloudVelodyne.points.front().time;
+
+        int cloudsize = laserCloudVelodyne.size();
         CloudOuster laserCloudOuster;
         laserCloudOuster.points.resize(cloudsize);
         laserCloudOuster.is_dense = true;
-
         static double hsToOusterIntensity = 1.0;
 
         #pragma omp parallel for num_threads(NUM_CORE)
         for (size_t i = 0; i < cloudsize; i++)
-        {
+        {            
             auto &src = laserCloudVelodyne.points[i];
             auto &dst = laserCloudOuster.points[i];
             dst.x = src.x;
@@ -104,11 +110,12 @@ public:
             dst.z = src.z;
             dst.intensity = src.intensity * hsToOusterIntensity;
             dst.ring = src.ring;
-            dst.t = src.time * 1e9f;
+            dst.t = (src.time - timebase) * 1e9f;
+            // printf("pidx: %d. Time: %f, %d.\n", i, src.time, dst.t);
             dst.range = sqrt(src.x * src.x + src.y * src.y + src.z * src.z)*1000;
         }
 
-        Util::publishCloud(ousterCloudPub, laserCloudOuster, msgIn->header.stamp, msgIn->header.frame_id);
+        Util::publishCloud(ousterCloudPub, laserCloudOuster, ros::Time(headerStamp + timebase), msgIn->header.frame_id);
     }
 };
 

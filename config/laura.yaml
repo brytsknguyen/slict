@@ -4,8 +4,6 @@ autoexit:           1
 # Declare the lidar topics to merge
 lidar_topic:        [
                       "/os_cloud_node/points"
-                      # ,
-                      # "/livox/lidar_ouster"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -15,23 +13,17 @@ merged_lidar_topic: "/merged_pc"
 # whether stamp is at beginning (1.000) or end (0.000) of scan
 lidar_extr:         [
                       # Ouster
-                      0.999934655205122900,    0.003477624535771754,  -0.010889970036688295,  -0.060649229060416594,
-                      0.003587143302461965,   -0.999943027982117100,   0.010053516443599904,  -0.012837544242408117,
-                     -0.010854387257665576,   -0.010091923381711220,  -0.999890161647627000,  -0.020492606896077407,
-                      0.000000000000000000,    0.000000000000000000,   0.000000000000000000,   0.000000000000000000
-                    #   ,
-                    #   # Livox
-                    #   0.99985813160508060000, -0.0002258196228773494, -0.0168423771687589430, -0.010514839241742317,
-                    #  -0.00017111407692153792, -0.9999947058517530000,  0.0032494597148797887, -0.008989784841758377,
-                    #  -0.01684302179448474500, -0.0032461167514232880, -0.9998528768488223000,  0.037356468638334630,
-                    #   0.00000000000000000000,  0.000000000000000000,   0.0000000000000000000,  1.000000000000000000
+                      1, 0, 0, -0.247,
+                      0, 1, 0, -0.039,
+                      0, 0, 1,  0.121,
+                      0, 0, 0,  1
                     ]
 
 # Minimum lidar range to admit
 min_range:          1.0
 
 # IMU topic
-imu_topic:          "/vn100/imu"
+imu_topic:          "/laura_w/zed_node/imu/data_raw"
 
 # Gravity constant
 GRAV:               9.82
@@ -83,9 +75,9 @@ surfel_map_depth:   16
 surfel_min_point:   5
 surfel_min_depth:   1
 surfel_query_depth: 7             # Equal to Dmax + 1. Dmax is defined in the paper
-surfel_intsect_rad: 0.1           # r in the the paper
-surfel_min_plnrty:  0.2
-use_ufm:            0
+surfel_intsect_rad: 0.2           # r in the the paper
+surfel_min_plnrty:  0.6
+use_ufm:            1
 
 # Distance to surfel and min score thresholds
 dis_to_surfel_max:  0.5
@@ -93,8 +85,6 @@ score_min:          0.0
 
 # Downsample coefficient of lidar scans, ds_rate = n means keep every n-th point.
 ds_rate:            [
-                      8
-                      ,
                       1
                     ]
 
@@ -102,8 +92,8 @@ ds_rate:            [
 sweep_len:          1
 
 # Threshold to add new keyframe
-kf_min_dis:         5.0
-kf_min_angle:       20
+kf_min_dis:         1.0
+kf_min_angle:       10
 refine_kf:          0
 
 # Optimization parameters
@@ -134,7 +124,7 @@ fuse_marg:          1
 
 regularize_imu:     0
 imu_init_time:      0.5
-lite_redeskew:      1
+lite_redeskew:      0
 max_outer_iters:    3
 max_lidar_factor:   8000  # Maximum number of lidar factors
 dj_thres:           0.0

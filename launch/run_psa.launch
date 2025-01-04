@@ -1,0 +1,81 @@
+<launch>
+
+      <arg name="publish_clock" default="--clock"/>
+      <arg name="autorun"       default="1"/>
+      <arg name="loop_en"       default="0"/>
+      <arg name="show_report"   default="1"/>
+
+      <!-- Enable prior map -->
+      <arg name="use_prior_map" default="0"/>
+
+      <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
+      <arg name="exp_log_dir" default="/root/DATASETS/PSA/logs"/>
+
+      <!-- PSA dataset -->
+      <arg name="data_path" default="/root/DATASETS/PSA/"/>
+      <arg name="bag_file" default="$(arg data_path)/PrimeMover_PSA_10_*.bag"/>
+
+      <!-- Manual initialization for reloc, comment out the sequence's initial position if you want to use STD for relocalization -->
+      <!-- <group if="$(eval 'PrimeMover_PSA_01' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 0, 0, 0, 0, 0, 0] </rosparam> </group> -->
+
+      <!-- Chose the config file based on the sequence names -->
+      <arg name="config_file" value="$(find slict)/config/psa.yaml"/>
+
+      <!-- Priormap file -->
+      <!-- <arg name="prior_map_dir" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/PriorMapPublish/NTU"/> -->
+
+      <!-- STD descriptor for relocalization -->
+      <!-- Downloadable at https://drive.google.com/drive/u/1/folders/1Sl1gGZqDXZzKPbB2XHr6h8jN-S5D9fO1 -->
+      <!-- <arg name="descriptor_path" default="/media/tmn/mySataSSD1/DATASETS/MCDVIRAL/Reloc/ntu_day_01/saved_descriptors/"  if="$(eval 'ntu_'  in bag_file)" /> -->
+      
+      <!-- Run the gps converter node -->
+      <node pkg="ak_msgs" type="akrtk_odometry_node" name="gnss_to_odom" output="screen">
+            <param name="frame_id"       value="odom"/>
+            <param name="child_frame_id" value="ak_rtk"/>
+      </node>
+
+      <!-- Load the param -->
+      <rosparam file="$(arg config_file)" command="load"/>
+      <!-- Set some exp related params -->
+      <param name="/autoexit" type="int"    value="$(arg autorun)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
+
+      <!-- Run the sensor sync -->
+      <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
+
+      <!-- Run the relocalization -->
+      <!-- <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
+            <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
+      </node> -->
+
+      <!-- Run the Estimator -->
+      <!-- <param name="/prior_map_dir"  type="string" value="$(arg prior_map_dir)" /> -->
+      <param name="/use_prior_map"  type="int"    value="$(arg use_prior_map)" />
+      <param name="/show_report"    type="int"    value="$(arg show_report)"   />
+      <param name="/slam_ref_frame" type="string" value="odom"/>
+      <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"/>
+      <!-- <node pkg="slict" required="true" type="slict_estimator" name="slict_estimator" respawn="false" output="screen"
+            launch-prefix="gdb -ex run - -args"/> -->
+
+      <!-- Run the imu predictor -->
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+
+      <!--- Run Rviz-->
+      <node pkg="rviz" type="rviz" name="rviz_slam" respawn="true" output="log"
+            args="-d $(find slict)/launch/psa.rviz" />
+
+      <!-- An offset time -->
+      <arg name="start_time" value="0"  if="$(eval 'PrimeMover_' in bag_file)"/>
+      <arg name="start_time" value="83" if="$(eval 'PrimeMover_PSA_08_' in bag_file)"/>
+
+      <!-- Play the bag file -->
+      <param name="/use_sim_time" value="false" />
+      <arg name="wait_time" value="$(eval use_prior_map*10 + 1)" />
+      <node required="false" pkg="rosbag" type="play" name="rosbag_player"
+            args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s $(arg start_time)"
+            launch-prefix="bash -c 'sleep $(arg wait_time); $0 $@' "/>
+
+      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+
+</launch>
