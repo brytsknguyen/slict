@@ -108,8 +108,8 @@ public:
         /* #region Map the memory to control points -----------------------------------------------------------------*/
 
         // // Indexing offsets for the states
-        size_t R_offset = 0;              // for quaternion
-        size_t P_offset = R_offset + N*3; // for position
+        // size_t R_offset = 0;              // for quaternion
+        // size_t P_offset = R_offset + N*3; // for position
         // size_t B_offset = P_offset + N*3; // for bias
 
         /* #endregion Map the memory to control points --------------------------------------------------------------*/
@@ -160,7 +160,8 @@ public:
         /* #region Calculate the residual ---------------------------------------------------------------------------*/
         
         // Residual
-        residual << ez.dot(R_W_Bt*ex), ez.dot(R_W_Bt*ey), ez.dot(p_inW_Bt);
+        residual << w*ez.dot(R_W_Bt*ex), w*ez.dot(R_W_Bt*ey), w*ez.dot(p_inW_Bt);
+        // residual << 0, 0, w*ez.dot(p_inW_Bt);
 
         // if (residual[0] > 1.0e9 || std::isnan(residual[0]))
         // {
@@ -203,7 +204,9 @@ public:
 
         // Jacobian on Rt
         Matrix<double, 3, 3> dr_dRt;
-        dr_dRt << -ez.transpose()*R_W_Bt.matrix()*SO3d::hat(ex), -ez.transpose()*R_W_Bt.matrix()*SO3d::hat(ey), 0, 0, 0;
+        dr_dRt << -ez.transpose()*R_W_Bt.matrix()*SO3d::hat(ex),
+                  -ez.transpose()*R_W_Bt.matrix()*SO3d::hat(ey),
+                   0, 0, 0;
 
         // Jacobian on Rj
         Matrix<double, 3, 3> dr_dR[N];
@@ -216,11 +219,13 @@ public:
         
         Matrix<double, 3, 3> dr_dP[N];
         for (int j = 0; j < N; j++)
-            dr_dP[j] << 0, 0, 0, 0, 0, 0, ez.transpose()*lambda_P[j];
+            dr_dP[j] << 0, 0, 0,
+                        0, 0, 0,
+                        0, 0, lambda_P[j];
 
         /* #endregion Jacobian of dis on knot P ---------------------------------------------------------------------*/
 
-        /// Rotation control point
+        // Rotation control point
         for (size_t j = 0; j < N; j++)
         {
             int ridx = j*6;
@@ -228,7 +233,7 @@ public:
             J_knot_R.block<3, 3>(0, 0) = dr_dR[j] * w;
         }
 
-        /// Position control point
+        // Position control point
         for (size_t j = 0; j < N; j++)
         {
             int pidx = j*6 + 3;

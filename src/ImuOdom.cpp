@@ -108,7 +108,7 @@ void imuCB(const rosImuMsgPtr &msg)
     tf::Transform transform;
     transform.setOrigin(tf::Vector3(tf_W_V.pos(0), tf_W_V.pos(1), tf_W_V.pos(2)));
     transform.setRotation(tf::Quaternion(tf_W_V.rot.w(), tf_W_V.rot.x(), tf_W_V.rot.y(), tf_W_V.rot.z()));
-    tfbr.sendTransform(tf::StampedTransform(transform, ros::Time::now(), pred_odom.header.frame_id, pred_odom.child_frame_id));
+    tfbr.sendTransform(tf::StampedTransform(transform, msg->header.stamp, pred_odom.header.frame_id, pred_odom.child_frame_id));
 }
 
 void odomCB(const rosOdomMsgPtr &msg)

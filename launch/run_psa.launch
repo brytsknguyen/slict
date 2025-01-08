@@ -44,6 +44,12 @@
       <!-- Run the sensor sync -->
       <node pkg="slict" required="true" type="slict_sensorsync" name="slict_sensorsync" respawn="false" output="log"/>
 
+      <!-- Run the helios to ouster converter -->
+      <node pkg="slict" required="true" type="slict_helios_to_ouster" name="slict_helios_to_ouster" respawn="false" output="screen">
+            <remap from="/cloud_helios"                to="/nt_topic/sensor/lidar3d_32_left_front_high"/>
+            <remap from="/helios_os_cloud_node/points" to="/helios_left_high/points"/>
+      </node>
+
       <!-- Run the relocalization -->
       <!-- <node if="$(eval use_prior_map > 0 and descriptor_path != '')" pkg="slict" required="true" type="slict_relocalization" name="slict_relocalization" respawn="false" output="screen">
             <param name="relocalization/descriptor_file_path" type="string" value="$(arg descriptor_path)"/>
@@ -59,15 +65,18 @@
             launch-prefix="gdb -ex run - -args"/> -->
 
       <!-- Run the imu predictor -->
-      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen"/>
+      <node pkg="slict" type="slict_imu_odom" name="slict_imu_odom" respawn="true" output="screen">
+            <param name="imu_topic" value="/ouster/imu"/>
+      </node>
 
       <!--- Run Rviz-->
       <node pkg="rviz" type="rviz" name="rviz_slam" respawn="true" output="log"
             args="-d $(find slict)/launch/psa.rviz" />
 
       <!-- An offset time -->
-      <arg name="start_time" value="0"  if="$(eval 'PrimeMover_' in bag_file)"/>
+      <!-- <arg name="start_time" value="0"     unless="$(eval 'PrimeMover_PSA_' in bag_file)"/> -->
       <arg name="start_time" value="83" if="$(eval 'PrimeMover_PSA_08_' in bag_file)"/>
+      <arg name="start_time" value="85" if="$(eval 'PrimeMover_PSA_10_' in bag_file)"/>
 
       <!-- Play the bag file -->
       <param name="/use_sim_time" value="false" />
@@ -76,6 +85,6 @@
             args="$(arg publish_clock) $(arg bag_file) -r 1.0 -s $(arg start_time)"
             launch-prefix="bash -c 'sleep $(arg wait_time); $0 $@' "/>
 
-      <!-- <node pkg="tf" type="static_transform_publisher" name="base2view" args="0 0 0 0 0 0 world local 1"/> -->
+      <node pkg="tf2_ros" type="static_transform_publisher" name="body2nt" args="0 0 0 0 0 0 1 body lidar"/>
 
 </launch>

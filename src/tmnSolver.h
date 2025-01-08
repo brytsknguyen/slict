@@ -142,6 +142,7 @@ private:
 
     // Forcing two estimate
     bool flat_ground = false;
+    double flat_ground_weight = 1.0;
 
     // Fuse marginalization
     bool fuse_marg = false;

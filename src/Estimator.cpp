@@ -1718,7 +1718,7 @@ public:
                              // Time and iterations
                              report.OptNum, report.OptNumSub, max_outer_iters,
                              report.iters, max_iterations,
-                             report.trun,
+                             GlobalTraj->maxTime() - GlobalTraj->minTime(),
                              reloc_stat == RELOCALIZED ? KYEL "RELOCALIZED!" RESET : "",
                              relocBuf.size(),
                              report.tpreopt,           // time preparing before lio optimization

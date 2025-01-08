@@ -4,6 +4,8 @@ autoexit:           1
 # Declare the lidar topics to merge
 lidar_topic:        [
                       "/ouster/points"
+                      # ,
+                      # "/helios_left_high/points"
                     ]
 
 merged_lidar_topic: "/merged_pc"
@@ -12,10 +14,16 @@ merged_lidar_topic: "/merged_pc"
 # NOTE TO USER: The (4,4) entry of the extrinsics is used to declare
 # whether stamp is at beginning (1.000) or end (0.000) of scan
 lidar_extr:         [
+                      # ouster
                       -1.0,  0.0,  0.0, -0.006253,
                        0.0, -1.0,  0.0,  0.011775,
                        0.0,  0.0,  1.0,  0.028535,
-                       0.0,  0.0,  0.0,  1.000000
+                       0.0,  0.0,  0.0,  1.000000,
+                      # # helios left high
+                      #  0.496863404713,  0.864043405803,  0.080967150629, -0.084145063524,
+                      # -0.867256434886,  0.497757737673,  0.010173189454, -0.582485619752,
+                      # -0.031511949466, -0.075273969801,  0.996664822102, -0.457951447869,
+                      #  0.000000000000,  0.000000000000,  0.000000000000,  1.000000000000
                     ]
 
 # Minimum lidar range to admit
@@ -41,6 +49,9 @@ VEL_N:              10
 
 # Weightage of a basic lidar factor
 lidar_weight:       2
+
+# Weightage of the flat ground factor
+flat_ground_weight: 0
 
 # Bias bounds
 BG_BOUND:           [ 0.1,  0.1,  0.2]
@@ -76,7 +87,7 @@ surfel_min_depth:   1
 surfel_query_depth: 7             # Equal to Dmax + 1. Dmax is defined in the paper
 surfel_intsect_rad: 0.2           # r in the the paper
 surfel_min_plnrty:  0.6
-use_ufm:            0
+use_ufm:            1
 
 # Distance to surfel and min score thresholds
 dis_to_surfel_max:  0.5
@@ -127,10 +138,10 @@ flat_ground:        1
 regularize_imu:     0
 imu_init_time:      0.2
 lite_redeskew:      1
-max_outer_iters:    3
+max_outer_iters:    9
 max_lidar_factor:   8000  # Maximum number of lidar factors
 dj_thres:           0.0
-dx_thres:           0.5
+dx_thres:           0.1
 
 # Loop closure parameters
 loop_en:            1

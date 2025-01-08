@@ -11,6 +11,8 @@
 #define RESIMU_COL 1                                        // Number of cols of an IMU residual block
 #define RESLDR_ROW 1                                        // Number of rows of an lidar residual block
 #define RESLDR_COL 1                                        // Number of rows of an lidar residual block
+#define RESFGD_ROW 3                                        // Number of rows of an lidar residual block
+#define RESFGD_COL 1                                        // Number of rows of an lidar residual block
 
 // Local sizes of states,
 int XROT_BASE;
@@ -30,14 +32,8 @@ int XBIA_GBASE;
 
 // Global sizes of residual
 int RESIMU_GSIZE;
-int RESIMU_GBASE;
-
 int RESLDR_GSIZE;
-int RESLDR_GBASE;
-
 int RESFGD_GSIZE = 0;
-int RESFGD_GBASE = -1;
-
 int RESALL_GSIZE;
 
 void InsertZeroCol(MatrixXd &M, int col, int size)
@@ -105,6 +101,9 @@ tmnSolver::tmnSolver(ros::NodeHandlePtr &nh_) : nh(nh_)
     // Lidar weight
     nh->getParam("/lidar_weight", lidar_weight);
 
+    // Lidar weight
+    nh->getParam("/flat_ground_weight", flat_ground_weight);
+
     // Damping factor
     nh->getParam("/lambda", lambda);
 
@@ -147,25 +146,16 @@ void tmnSolver::UpdateDimensions(int &imu_factors, int &ldr_factors, int knots)
     // Global size of states
     XSE3_GSIZE = knots*XSE3_SIZE;
     XALL_GSIZE = XSE3_GSIZE + XBGA_SIZE;
-    XSE3_GBASE = 0;
     XBGA_GBASE = XSE3_GBASE + XSE3_GSIZE;
     XBIG_GBASE = XBGA_GBASE;
     XBIA_GBASE = XBIG_GBASE + XBIG_SIZE;
 
     // Global sizes of residual
     RESIMU_GSIZE = imu_factors*RESIMU_ROW;
-    RESIMU_GBASE = 0;
-
     RESLDR_GSIZE = ldr_factors*RESLDR_ROW;
-    RESLDR_GBASE = RESIMU_GBASE + RESIMU_GSIZE;
-
     RESFGD_GSIZE = 0;
-    RESFGD_GBASE = 0;
     if(flat_ground)
-    {
         RESFGD_GSIZE = (knots - SPLINE_N + 1)*3;
-        RESFGD_GBASE = RESLDR_GBASE + RESLDR_GSIZE;
-    }
 
     RESALL_GSIZE = RESIMU_GSIZE + RESLDR_GSIZE + RESFGD_GSIZE;
 }
@@ -206,7 +196,7 @@ void tmnSolver::EvaluateImuFactors
         gabFactor imuFactor(SwImuBundle[i][j][k], imuBiasPrior, GRAV, GYR_N, ACC_N, GYR_W, ACC_W, SPLINE_N, traj.getDt(), u);
         imuFactor.Evaluate(xr_local, xp_local, xbg, xba);
 
-        int row = RESIMU_GBASE + idx*RESIMU_ROW;
+        int row = idx*RESIMU_ROW;
         int col = s*XSE3_SIZE;
 
         r.block(row, 0, RESIMU_ROW, 1         ).setZero();
@@ -327,19 +317,25 @@ void tmnSolver::EvaluateFlatGroundFactors
 
         // Calculate the jacobian of this lidar factor:
         typedef FlatGroundFactor FGFactor;
-        FGFactor fgFactor = FGFactor(10, SPLINE_N, traj.getDt(), u);
+        FGFactor fgFactor = FGFactor(flat_ground_weight, SPLINE_N, traj.getDt(), u);
 
         // Calculate the residual and jacobian
         fgFactor.Evaluate(xr_local, xp_local);
 
-        // int row = RESLDR_GBASE + idx*RESLDR_ROW;
-        // int col = s*XSE3_SIZE;
+        int row = kidx*RESFGD_ROW;
+        int col = s*XSE3_SIZE;
 
-        // r.block(row, 0, RESLDR_ROW, 1         ).setZero();
-        // J.block(row, 0, RESLDR_ROW, XALL_GSIZE).setZero();
+        // r.block(row, 0, RESFGD_ROW, 1         ).setZero();
+        // J.block(row, 0, RESFGD_ROW, XALL_GSIZE).setZero();
 
-        // r.block(row, 0,   RESLDR_ROW, RESLDR_COL) << lidarFactor.residual;
-        // J.block(row, col, RESLDR_ROW, XSE3_LSIZE) << lidarFactor.jacobian.block(0, 0, RESLDR_ROW, XSE3_LSIZE);
+        r.block(row, 0,   RESFGD_ROW, RESFGD_COL) << fgFactor.residual;
+        J.block(row, col, RESFGD_ROW, XSE3_LSIZE) << fgFactor.jacobian.block(0, 0, RESFGD_ROW, XSE3_LSIZE);
+
+        // if (kidx == 0)
+        // {
+        //     cout << "rfgd" << endl << fgFactor.residual << endl;
+        //     cout << "Jfgd" << endl << fgFactor.jacobian << endl;
+        // }
     }
 }
 
@@ -578,6 +574,7 @@ bool tmnSolver::Solve
     double J0imu = 0;
     VectorXd RIMU(RESIMU_GSIZE, 1);
     MatrixXd JIMU(RESIMU_GSIZE, XALL_GSIZE);
+    RIMU.setZero(); JIMU.setZero();
     EvaluateImuFactors(traj, xr, xp, xbg, xba, SwImuBundle, imuSelected, ImuBias(BIGprior, BIAprior), RIMU, JIMU, find_factor_cost ? &J0imu : NULL);
 
     /* #endregion */ tt_himu.Toc();
@@ -588,6 +585,7 @@ bool tmnSolver::Solve
     double J0ldr = 0;
     VectorXd RLDR(RESLDR_GSIZE, 1);
     MatrixXd JLDR(RESLDR_GSIZE, XALL_GSIZE);
+    RLDR.setZero(); JLDR.setZero();
     EvaluateLdrFactors(traj, xr, xp, SwCloudDskDS, SwLidarCoef, featureSelected, RLDR, JLDR, find_factor_cost ? &J0ldr : NULL);
 
     /* #endregion */ tt_hlidar.Toc();
@@ -595,17 +593,20 @@ bool tmnSolver::Solve
 
     /* #region  */ TicToc tt_flatground;
     
-    double J0fgnd = 0;
-    VectorXd RFGD(RESLDR_GSIZE, 1);
-    MatrixXd JFGD(RESLDR_GSIZE, XALL_GSIZE);
+    double J0fgd = 0;
+    VectorXd RFGD(RESFGD_GSIZE, 1);
+    MatrixXd JFGD(RESFGD_GSIZE, XALL_GSIZE);
     if(flat_ground)
-        EvaluateFlatGroundFactors(traj, xr, xp, RFGD, JFGD, find_factor_cost ? &J0fgnd : NULL);
+    {
+        RFGD.setZero(); JFGD.setZero();
+        EvaluateFlatGroundFactors(traj, xr, xp, RFGD, JFGD, find_factor_cost ? &J0fgd : NULL);
+    }
 
     /* #endregion */ tt_flatground.Toc();
 
 
     /* #region  */ TicToc tt_hprior;
-    
+
     double J0pri = 0;
     if(fuse_marg)
         EvaluatePriFactors(iter, prev_knot_x, curr_knot_x, xr, xp, xbg, xba, bprior_sparse, Hprior_sparse, NULL, NULL, find_factor_cost ? &J0pri : NULL);
@@ -615,22 +616,33 @@ bool tmnSolver::Solve
 
     /* #region  */ TicToc tt_compute;
 
-    auto rJtoHb = [](VectorXd &r, MatrixXd &J, SparseMatrix<double> &H, MatrixXd &b)
+    auto AddrJtoHb = [](VectorXd &r, MatrixXd &J, SparseMatrix<double> &H, MatrixXd &b)
     {
         SparseMatrix<double> Jsparse = J.sparseView(); Jsparse.makeCompressed();    
         SparseMatrix<double> Jtp = Jsparse.transpose();
-        H =  Jtp*Jsparse;
-        b = -Jtp*r;
+
+        if (b.size() == 0)
+        {
+            H =  Jtp*Jsparse;
+            b = -Jtp*r;
+        }
+        else
+        {
+            H +=  Jtp*Jsparse;
+            b += -Jtp*r;
+        }
     };
 
-    SparseMatrix<double> Himu; MatrixXd bimu;
-    rJtoHb(RIMU, JIMU, Himu, bimu);
-
-    SparseMatrix<double> Hldr; MatrixXd bldr;
-    rJtoHb(RLDR, JLDR, Hldr, bldr);
-
-    SparseMatrix<double> H = Himu + Hldr;
-    MatrixXd b = bimu + bldr;
+    SparseMatrix<double> H; MatrixXd b;
+    AddrJtoHb(RIMU, JIMU, H, b);
+    AddrJtoHb(RLDR, JLDR, H, b);
+    if(flat_ground)
+    {
+        assert(RFGD.maxCoeff() == 0.0);
+        assert(JFGD.maxCoeff() == 0.0);
+        
+        AddrJtoHb(RFGD, JFGD, H, b);
+    }
 
     if( fuse_marg
         && Hprior_sparse.rows() > 0
@@ -698,11 +710,20 @@ bool tmnSolver::Solve
     {
         Vector3d dr = dX.block<3, 1>(idx*XSE3_SIZE + XROT_BASE, 0);
         Vector3d dp = dX.block<3, 1>(idx*XSE3_SIZE + XPOS_BASE, 0);
-
-        xr[idx]  = xr[idx]*SO3d::exp(dr);
-        if(flat_ground)
-            dp(2) = 0;
-        xp[idx] += dp;
+        
+        // if (flat_ground)
+        // {
+        //     // dr(0) = 0;
+        //     // dr(1) = 0;
+        //     // dp(2) = 0;
+        //     xr[idx] = xr[idx]*SO3d::exp(dr);
+        //     xp[idx] += dp;
+        // }
+        // else
+        {
+            xr[idx] = xr[idx]*SO3d::exp(dr);
+            xp[idx] += dp;
+        }
     }
     xbg += dX.block<3, 1>(XBIG_GBASE, 0);
     xba += dX.block<3, 1>(XBIA_GBASE, 0);
@@ -726,26 +747,36 @@ bool tmnSolver::Solve
     double JKimu = 0;
     double JKldr = 0;
     double JKpri = 0;
+    double JKfgd = 0;
 
     if (iter == 0 && fuse_marg)
     {
-        // Reset the big matrices
-        // RESIDUAL.setZero();
-        // JACOBIAN.setZero();
-
         VectorXd RIMU(RESIMU_GSIZE, 1);
         MatrixXd JIMU(RESIMU_GSIZE, XALL_GSIZE);
+        RIMU.setZero(); JIMU.setZero();
         EvaluateImuFactors(traj, xr, xp, xbg, xba, SwImuBundle, imuSelected, ImuBias(BIGprior, BIAprior), RIMU, JIMU, find_factor_cost ? &JKimu : NULL);
 
         VectorXd RLDR(RESLDR_GSIZE, 1);
         MatrixXd JLDR(RESLDR_GSIZE, XALL_GSIZE);
+        RLDR.setZero(); JLDR.setZero();
         EvaluateLdrFactors(traj, xr, xp, SwCloudDskDS, SwLidarCoef, featureSelected, RLDR, JLDR, find_factor_cost ? &JKldr : NULL);
+
+        VectorXd RFGD(RESFGD_GSIZE, 1);
+        MatrixXd JFGD(RESFGD_GSIZE, XALL_GSIZE);
+        if(flat_ground)
+        {
+            RFGD.setZero(); JFGD.setZero();
+            EvaluateFlatGroundFactors(traj, xr, xp, RFGD, JFGD, find_factor_cost ? &JKfgd : NULL);
+        }
 
         SparseMatrix<double> bprior_final_sparse;
         SparseMatrix<double> Hprior_final_sparse;
         VectorXd bprior_final_reduced;
         MatrixXd Hprior_final_reduced;
-        EvaluatePriFactors(iter, prev_knot_x, curr_knot_x, xr, xp, xbg, xba, bprior_final_sparse, Hprior_final_sparse, &bprior_final_reduced, &Hprior_final_reduced, find_factor_cost ? &JKpri : NULL);
+        EvaluatePriFactors(iter, prev_knot_x, curr_knot_x, xr, xp, xbg, xba,
+                           bprior_final_sparse, Hprior_final_sparse,
+                           &bprior_final_reduced, &Hprior_final_reduced,
+                           find_factor_cost ? &JKpri : NULL);
 
         // Determine the marginalized (removed) states
         map<int, int> x_knot_marg;
@@ -812,12 +843,33 @@ bool tmnSolver::Solve
             }
         }
 
-        int MARG_ROW_SIZE = res_imu_marg.size() + res_ldr_marg.size();
+        // Find the marginalized fgd residuals
+        vector<int> res_fgd_marg;
+        if (flat_ground)
+            for (int kidx = 0; kidx < traj.numKnots() - SPLINE_N + 1; kidx++)
+            {
+                double sample_time = traj.minTime() + (kidx + 0.5)*traj.getDt();
+                auto   us = traj.computeTIndex(sample_time);
+                double u  = us.first;
+                int    s  = us.second;
+    
+                if (x_knot_marg.find(s) != x_knot_marg.end())
+                {
+                    for(int row_idx = 0; row_idx < RESFGD_ROW; row_idx++)
+                        res_fgd_marg.push_back(kidx*RESFGD_ROW + row_idx);
+    
+                    for(int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
+                        if(x_knot_marg.find(knot_idx) == x_knot_marg.end())
+                            x_knot_keep[knot_idx] = curr_knot_x.begin()->first + knot_idx;    
+                }
+            }
+
+        int MARG_ROW_SIZE = res_imu_marg.size() + res_ldr_marg.size() + res_fgd_marg.size();
         int MK_XSE3_SIZE = (x_knot_marg.size() + x_knot_keep.size())*XSE3_SIZE;
 
         // Extract the rows
-        MatrixXd Jmarg = MatrixXd::Zero(res_imu_marg.size() + res_ldr_marg.size(), MK_XSE3_SIZE + XBGA_SIZE);
-        MatrixXd rmarg = MatrixXd::Zero(res_imu_marg.size() + res_ldr_marg.size(), 1);
+        MatrixXd Jmarg = MatrixXd::Zero(MARG_ROW_SIZE, MK_XSE3_SIZE + XBGA_SIZE);
+        MatrixXd rmarg = MatrixXd::Zero(MARG_ROW_SIZE, 1);
         int row_marg = 0;
         for(int row : res_imu_marg)
         {
@@ -829,6 +881,12 @@ bool tmnSolver::Solve
         {
             Jmarg.row(row_marg) << JLDR.block(row, 0, 1, MK_XSE3_SIZE), JLDR.block(row, XBGA_GBASE, 1, XBGA_SIZE) ;
             rmarg.row(row_marg) = RLDR.row(row);
+            row_marg++;
+        }
+        for(int row : res_fgd_marg)
+        {
+            Jmarg.row(row_marg) << JFGD.block(row, 0, 1, MK_XSE3_SIZE), JFGD.block(row, XBGA_GBASE, 1, XBGA_SIZE) ;
+            rmarg.row(row_marg) = RFGD.row(row);
             row_marg++;
         }
 
@@ -865,13 +923,23 @@ bool tmnSolver::Solve
             InsertZeroCol(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(bprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
-            
-            // printf("Hpr %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
-            //         Hprior_final_reduced.rows(), Hprior_final_reduced.rows(), XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
+
+            // printf("Hpr %d x %d. H: %d x %d. Hfn: %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
+            //         Hprior_final_reduced.rows(), Hprior_final_reduced.cols(),
+            //         H.rows(), H.cols(),
+            //         Hprior_final_sparse.rows(),
+            //         Hprior_final_sparse.cols(),
+            //         XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
+
+            // // Sanity check
+            // MatrixXd Hcheck = Hprior_final_reduced - Hprior_final_sparse;
+            // MatrixXd bcheck = bprior_final_reduced - bprior_final_sparse;
+            // assert(Hcheck.cwiseAbs().maxCoeff() < 1e-6);
+            // assert(bcheck.cwiseAbs().maxCoeff() < 1e-6);
 
             SparseMatrix<double> H_extr_sparse = Hprior_final_reduced.sparseView(); H_extr_sparse.makeCompressed();
             SparseMatrix<double> b_extr_sparse = bprior_final_reduced.sparseView(); b_extr_sparse.makeCompressed();
-            
+
             H += H_extr_sparse;
             b += b_extr_sparse;
         }
