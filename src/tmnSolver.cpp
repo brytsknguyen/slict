@@ -641,6 +641,9 @@ bool tmnSolver::Solve
         assert(RFGD.maxCoeff() == 0.0);
         assert(JFGD.maxCoeff() == 0.0);
         
+        assert(RFGD.minCoeff() == 0.0);
+        assert(JFGD.minCoeff() == 0.0);
+        
         AddrJtoHb(RFGD, JFGD, H, b);
     }
 
