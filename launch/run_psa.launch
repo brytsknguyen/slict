@@ -2,18 +2,18 @@
 
       <arg name="publish_clock" default="--clock"/>
       <arg name="autorun"       default="1"/>
-      <arg name="loop_en"       default="0"/>
+      <arg name="loop_en"       default="1"/>
       <arg name="show_report"   default="1"/>
 
       <!-- Enable prior map -->
       <arg name="use_prior_map" default="0"/>
 
       <!-- Directory to log the bundle adjustment poses, pointclouds, and others-->
-      <arg name="exp_log_dir" default="/root/DATASETS/PSA/logs"/>
+      <arg name="exp_log_dir" default="/root/DATASETS/PSA/slict_logs"/>
 
       <!-- PSA dataset -->
       <arg name="data_path" default="/root/DATASETS/PSA/"/>
-      <arg name="bag_file" default="$(arg data_path)/PrimeMover_PSA_10_*.bag"/>
+      <arg name="bag_file" default="$(arg data_path)/PrimeMover_PSA_11_*.bag"/>
 
       <!-- Manual initialization for reloc, comment out the sequence's initial position if you want to use STD for relocalization -->
       <!-- <group if="$(eval 'PrimeMover_PSA_01' in bag_file)"> <rosparam param="/tf_Lprior_L0_init"> [ 0, 0, 0, 0, 0, 0] </rosparam> </group> -->
@@ -38,7 +38,7 @@
       <rosparam file="$(arg config_file)" command="load"/>
       <!-- Set some exp related params -->
       <param name="/autoexit" type="int"    value="$(arg autorun)" />
-      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />
+      <param name="/loop_en"  type="int"    value="$(arg loop_en)" />   ``
       <param name="/log_dir"  type="string" value="$(arg exp_log_dir)" />
 
       <!-- Run the sensor sync -->
@@ -74,9 +74,9 @@
             args="-d $(find slict)/launch/psa.rviz" />
 
       <!-- An offset time -->
-      <!-- <arg name="start_time" value="0"     unless="$(eval 'PrimeMover_PSA_' in bag_file)"/> -->
-      <arg name="start_time" value="83" if="$(eval 'PrimeMover_PSA_08_' in bag_file)"/>
-      <arg name="start_time" value="85" if="$(eval 'PrimeMover_PSA_10_' in bag_file)"/>
+      <!-- <arg name="start_time" value="83" if="$(eval 'PrimeMover_PSA_08_' in bag_file)"/> -->
+      <arg name="start_time" value="00" if="$(eval 'PrimeMover_PSA_10_' in bag_file)"/>
+      <arg name="start_time" value="40" if="$(eval 'PrimeMover_PSA_11_' in bag_file)"/>
 
       <!-- Play the bag file -->
       <param name="/use_sim_time" value="false" />

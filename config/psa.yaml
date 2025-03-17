@@ -122,7 +122,7 @@ linAlgbLib:         "eigen"
 max_solve_time:     0.3
 max_iterations:     30
 ensure_real_time:   0
-find_factor_cost:   1
+find_factor_cost:   0
 fit_spline:         0
 # Damping factor for the LM method
 lambda:             1.0
@@ -133,20 +133,20 @@ fuse_imu:           1
 fuse_poseprop:      0
 fuse_velprop:       0
 fuse_marg:          1
-flat_ground:        1
+flat_ground:        0
 
 regularize_imu:     0
-imu_init_time:      0.2
+imu_init_time:      0.5
 lite_redeskew:      1
-max_outer_iters:    9
+max_outer_iters:    6
 max_lidar_factor:   8000  # Maximum number of lidar factors
 dj_thres:           0.0
-dx_thres:           0.1
+dx_thres:           0.05
 
 # Loop closure parameters
 loop_en:            1
-loop_kf_nbr:        20    # Number of neighbour to check for loop closure
-loop_kfid_mindiff:  20    # Only check for loop when keyframes have this much difference
+loop_kf_nbr:        10    # Number of neighbour to check for loop closure
+loop_kfid_mindiff:  10    # Only check for loop when keyframes have this much difference
 
 icpMaxIter:         100   # Maximum iterations for ICP
 icpFitnessThres:    0.6   # Fitness threshold for ICP check
@@ -156,7 +156,7 @@ histDis:            15    # Maximum correspondence distance for icp
 rib_edge:           100
 odom_q_noise:       0.1
 odom_p_noise:       0.1
-loop_weight:        0.05
+loop_weight:        0.1
 
 # Number of optimizations before quitting
 publish_map:        0
