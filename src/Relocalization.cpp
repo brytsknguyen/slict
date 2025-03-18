@@ -86,7 +86,7 @@ public:
         if (processThread.joinable())
             processThread.join();
 
-        // printf("[LITELOAM " << liteloam_id << "] Destructor - thread joined");
+        ROS_WARN("liteloam %d destructed." RESET, liteloam_id);
     }
 
     LITELOAM(const CloudXYZIPtr &priorMap, const KdFLANNPtr &kdTreeMap,
@@ -108,9 +108,10 @@ public:
         running = true;
         processThread = std::thread(&LITELOAM::processBuffer, this);
 
-        ROS_INFO_STREAM("[LITELOAM " << liteloam_id
-                                     << "] Constructor - thread started");
+        ROS_INFO_STREAM("[LITELOAM " << liteloam_id << "] Constructor - thread started");
     }
+
+    void stop() {running = false;}
 
     void processBuffer()
     {
@@ -165,11 +166,11 @@ public:
 
             // publishPose(processTime);
             if(liteloam_id == 0)
-                printf("liteloam_id %d. Start time: %f\n", liteloam_id, startTime);
+                ROS_INFO("liteloam_id %d. Start time: %f. Running Time: %f.", liteloam_id, startTime, timeSinceStart());
         }
         
         if(liteloam_id == 0)
-            printf(KRED "liteloam_id %d exits\n" RESET, liteloam_id);
+            ROS_INFO(KRED "liteloam_id %d exits." RESET, liteloam_id);
     }
 
     void PCHandler(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -275,8 +276,9 @@ public:
     }
 
     // Getter for Relocalization
-    bool timeSinceStart() const { return ros::Time::now().toSec() - startTime; }
-    bool loamConverge() const { return false; }
+    double timeSinceStart() const { return ros::Time::now().toSec() - startTime; }
+    bool loamConverged() const { return false; }
+    bool isRunning() const { return running; }
     int getID() const { return liteloam_id; }
 };
 
@@ -286,20 +288,23 @@ class Relocalization
 private:
     // Node handler
     ros::NodeHandlePtr nh_ptr;
-
+    
     // Subcriber of lidar pointcloud
     ros::Subscriber lidarCloudSub;
 
-    ros::Publisher relocPub;
-
+    // Subscriber to uloc prediction
     ros::Subscriber ulocSub;
+
+    // Relocalization pose publication
+    ros::Publisher relocPub;
 
     CloudXYZIPtr priorMap;
     KdFLANNPtr kdTreeMap;
-
-    std::vector<std::shared_ptr<LITELOAM>> loamInstances;
-
     bool priorMapReady = false;
+
+    mutex loam_mtx;
+    std::vector<std::shared_ptr<LITELOAM>> loamInstances;
+    std::thread checkLoamThread;
 
 public:
     // Destructor
@@ -309,8 +314,45 @@ public:
     {
         // Initialize the variables and subsribe/advertise topics here
         Initialize();
+
+        // Make thread to monitor the loadm instances
+        checkLoamThread = std::thread(&Relocalization::CheckLiteLoams, this);
     }
 
+    void CheckLiteLoams()
+    {
+        while(ros::ok())
+        {
+            {
+                lock_guard<mutex> lg(loam_mtx);
+
+                // Iterate through existing instances to check their status
+                for (size_t lidx = 0; lidx < loamInstances.size(); ++lidx)
+                {
+                    auto &loam = loamInstances[lidx];
+
+                    if (loam == nullptr)
+                        continue;
+
+                    // Restart the instance if it has exceeded 10 seconds and is not working
+                    if (loam->timeSinceStart() > 10 && !loam->loamConverged() && loam->isRunning())
+                    {
+                        ROS_INFO("[Relocalization] LITELOAM %d exceeded 10 sec and is not working. Restarting...",
+                                loam->getID());
+                                            
+                        loam->stop();
+                    }
+                    else if(loam->loamConverged())
+                    {
+                        // Do something to begin relocalization 
+                    }
+                }
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    
     void Initialize()
     {
         // ULOC pose subcriber
@@ -319,21 +361,21 @@ public:
         // loadPriorMap
         string prior_map_dir = "";
         nh_ptr->param("/prior_map_dir", prior_map_dir, string(""));
-        printf("prior_map_dir: %s\n", prior_map_dir.c_str());
+        ROS_INFO("prior_map_dir: %s", prior_map_dir.c_str());
 
         this->priorMap.reset(new pcl::PointCloud<pcl::PointXYZI>());
         this->kdTreeMap.reset(new pcl::KdTreeFLANN<pcl::PointXYZI>());
 
         std::string pcd_file = prior_map_dir + "/priormap.pcd";
-        printf("Prebuilt pcd map found, loading...\n");
+        ROS_INFO("Prebuilt pcd map found, loading...");
 
         pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_file, *(this->priorMap));
-        printf("Prior Map (%zu points) \n", priorMap->size());
+        ROS_INFO("Prior Map (%zu points).", priorMap->size());
 
         this->kdTreeMap->setInputCloud(this->priorMap);
         priorMapReady = true;
 
-        printf("Prior Map Load Completed \n");
+        ROS_INFO("Prior Map Load Completed \n");
     }
 
     void ULOCCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
@@ -346,34 +388,33 @@ public:
 
         mytf pose(*msg);
 
-        // If the number of LITELOAM instances is less than 10, create one more
-        if (loamInstances.size() < 10)
         {
-            int newID = loamInstances.size(); // Assign a new ID based on the current size
-            auto newLoam = std::make_shared<LITELOAM>(priorMap, kdTreeMap, pose, newID, nh_ptr);
-            loamInstances.push_back(newLoam);
-            ROS_INFO("[Relocalization] Created new LITELOAM instance with ID %d. "
-                     "Total instances: %lu",
-                     newID, loamInstances.size());
-        }
+            lock_guard<mutex> lg(loam_mtx);
 
-        // Iterate through existing instances to check their status
-        for (size_t i = 0; i < loamInstances.size(); ++i)
-        {
-            auto &loam = loamInstances[i];
-
-            // Restart the instance if it has exceeded 10 seconds and is not working
-            if (loam->timeSinceStart() > 10 && !loam->loamConverge())
+            // If the number of LITELOAM instances is less than 10, create one more
+            if (loamInstances.size() < 10)
             {
-                ROS_WARN("[Relocalization] LITELOAM %d exceeded 10 sec and is not working. Restarting...",
-                         loam->getID());
+                int newID = loamInstances.size(); // Assign a new ID based on the current size
+                auto newLoam = std::make_shared<LITELOAM>(priorMap, kdTreeMap, pose, newID, nh_ptr);
+                loamInstances.push_back(newLoam);
+                ROS_INFO("[Relocalization] Created new LITELOAM instance with ID %d. "
+                        "Total instances: %lu",
+                        newID, loamInstances.size());
+            }
 
-                
+            for (size_t lidx = 0; lidx < loamInstances.size(); ++lidx)
+            {
+                auto &loam = loamInstances[lidx];
 
-                // Replace the instance with a new one using the same ID
-                loamInstances[i] = std::make_shared<LITELOAM>(priorMap, kdTreeMap, pose, loam->getID(), nh_ptr);
+                // Add a new loam if the current loam is null
+                if (!loam->isRunning())
+                {
+                    // Replace the instance with a new one using the same ID
+                    loam = std::make_shared<LITELOAM>(priorMap, kdTreeMap, pose, loam->getID(), nh_ptr);
+                    ROS_INFO("[Relocalization] LITELOAM %d restarted.", loam->getID());
 
-                ROS_INFO("[Relocalization] LITELOAM %d restarted.", loamInstances[i]->getID());
+                    break;
+                }
             }
         }
     }
