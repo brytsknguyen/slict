@@ -6,10 +6,12 @@ Panels:
       Expanded:
         - /Optimization1
         - /Optimization1/OptOdom1/Shape1
+        - /Optimization1/OptOdom1/Covariance1
         - /Optimization1/PredictOdom1/Shape1
+        - /Optimization1/LastCloud1
         - /Map1/KfCloud1
       Splitter Ratio: 0.5614035129547119
-    Tree Height: 410
+    Tree Height: 471
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -27,7 +29,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: PriorMap
+    SyncSource: KfCloud
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -36,7 +38,7 @@ Visualization Manager:
   Class: ""
   Displays:
     - Alpha: 0.5
-      Cell Size: 50
+      Cell Size: 10
       Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: true
@@ -116,15 +118,15 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: true
-          Enabled: false
+          Enabled: true
           Keep: 1
           Name: OptOdom
           Position Tolerance: 0
           Queue Size: 0
           Shape:
             Alpha: 1
-            Axes Length: 3
-            Axes Radius: 0.5
+            Axes Length: 5
+            Axes Radius: 0.25
             Color: 255; 25; 0
             Head Length: 0.30000001192092896
             Head Radius: 0.10000000149011612
@@ -133,7 +135,7 @@ Visualization Manager:
             Value: Axes
           Topic: /opt_odom
           Unreliable: false
-          Value: false
+          Value: true
         - Angle Tolerance: 0
           Class: rviz/Odometry
           Covariance:
@@ -151,7 +153,7 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: true
-          Enabled: true
+          Enabled: false
           Keep: 1
           Name: PredictOdom
           Position Tolerance: 0
@@ -168,7 +170,7 @@ Visualization Manager:
             Value: Axes
           Topic: /pred_odom_W_V
           Unreliable: false
-          Value: true
+          Value: false
         - Alpha: 1
           Buffer Length: 1
           Class: rviz/Path
@@ -277,7 +279,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 0
-          Enabled: false
+          Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 400
@@ -290,11 +292,11 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.10000000149011612
           Style: Squares
-          Topic: /lastcloud
+          Topic: /lastcloud_inB
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: false
+          Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -662,8 +664,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
+        Max Value: 47.88166809082031
+        Min Value: -12.696585655212402
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -680,8 +682,8 @@ Visualization Manager:
       Queue Size: 1
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.05000000074505806
-      Style: Flat Squares
+      Size (m): 0.20000000298023224
+      Style: Points
       Topic: /priormap
       Unreliable: false
       Use Fixed Frame: true
@@ -887,9 +889,25 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 1
+      Axes Length: 15
+      Axes Radius: 3
+      Class: rviz/Pose
+      Color: 0; 0; 0
+      Enabled: true
+      Head Length: 1
+      Head Radius: 1
+      Name: ULOCPOSE
+      Queue Size: 1
+      Shaft Length: 1
+      Shaft Radius: 1
+      Shape: Axes
+      Topic: /uwb_pose
+      Unreliable: false
+      Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 0; 0; 0
     Default Light: true
     Fixed Frame: map
     Frame Rate: 30
@@ -914,36 +932,30 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz/XYOrbit
-      Distance: 19.14592742919922
+      Angle: 0
+      Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
-      Field of View: 0.7853981852531433
-      Focal Point:
-        X: 5.948090553283691
-        Y: -2.457622528076172
-        Z: -1.6128524293890223e-07
-      Focal Shape Fixed Size: false
-      Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.46039843559265137
-      Target Frame: body
-      Yaw: 5.943588733673096
+      Scale: 6.068112373352051
+      Target Frame: map
+      X: -2.8211240768432617
+      Y: 1.9860496520996094
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: true
-  Height: 1043
+  Height: 701
   Hide Left Dock: true
   Hide Right Dock: true
   Image:
-    collapsed: true
-  QMainWindow State: 000000ff00000000fd00000004000000000000020300000375fc0200000009fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb0000000a0049006d006100670065000000003d000001980000001600fffffffb000000100044006900730070006c00610079007300000001db000001d7000000c900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261000000010000019600000375fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d00000375000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b2000000000000000000000002000004ab000000a9fc0100000002fb0000000a0049006d006100670065030000000f0000004c0000014400000109fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004180000003efc0100000002fb0000000800540069006d0065010000000000000418000003bc00fffffffb0000000800540069006d00650100000000000004500000000000000000000004180000037500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000004000000000000015800000219fc0200000009fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005e00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb0000000a0049006d0061006700650000000040000000e50000001800fffffffb000000100044006900730070006c006100790073000000004000000219000000ce00fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261000000010000019600000219fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000004000000219000000ac00fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b2000000000000000000000002000004ab000000a9fc0100000002fb0000000a0049006d00610067006503000005fa000000810000017300000123fb0000000a00560069006500770073030000004e00000080000002e100000197000000030000047e0000003efc0100000002fb0000000800540069006d006501000000000000047e0000041b00fffffffb0000000800540069006d006501000000000000045000000000000000000000047e0000021900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Time:
@@ -952,6 +964,6 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: true
-  Width: 1048
-  X: 3840
-  Y: 0
+  Width: 1150
+  X: 770
+  Y: 163

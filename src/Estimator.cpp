@@ -1152,13 +1152,13 @@ public:
             CloudMatcher cm(0.1, 0.1);
 
             // Run ICP to find the relative pose
-            // Matrix4f tfm_Lprior_L0;
-            // double icpFitness = 0;
-            // double icpTime = 0;
-            // cm.CheckICP(localMap, KfCloudinW.back(), tf_Lprior_L0.cast<float>().tfMat(), tfm_Lprior_L0,
-            //             10, 10, 1.0, icpFitness, icpTime);
+            Matrix4f tfm_Lprior_L0;
+            double icpFitness = 0;
+            double icpTime = 0;
+            cm.CheckICP(localMap, KfCloudinW.back(), tf_Lprior_L0.cast<float>().tfMat(), tfm_Lprior_L0,
+                        10, 10, 1.0, icpFitness, icpTime);
             
-            // tf_Lprior_L0 = myTf(tfm_Lprior_L0).cast<double>();
+            tf_Lprior_L0 = myTf(tfm_Lprior_L0).cast<double>();
 
             // printf(KGRN "Refine the transform: %9.3f, %9.3f, %9.3f, %9.3f, %9.3f, %9.3f. Fitness: %f. Time: %f\n" RESET,
             //         tf_Lprior_L0.pos.x(), tf_Lprior_L0.pos.y(), tf_Lprior_L0.pos.z(),
@@ -1173,7 +1173,7 @@ public:
             // ioaOpt.fix_rot = fix_rot;
             // ioaOpt.fix_trans = fix_trans;
             IOASummary ioaSum;
-            cm.IterateAssociateOptimize(ioaOpt, ioaSum, localMap, KfCloudinW.back());
+            cm.IterateAssociateOptimize(ioaOpt, ioaSum, localMap, KfCloudinW.front());
 
             tf_Lprior_L0 = ioaSum.final_tf;
 
@@ -4446,6 +4446,8 @@ public:
         static ros::Publisher opt_odom_pub           = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom", 100);
         static ros::Publisher opt_odom_high_freq_pub = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom_high_freq", 100);
         static ros::Publisher lastcloud_pub          = nh_ptr->advertise<sensor_msgs::PointCloud2>("/lastcloud", 100);
+        static ros::Publisher lastcloud_inB_pub      = nh_ptr->advertise<sensor_msgs::PointCloud2>("/lastcloud_inB", 100);
+
         // Stuff in map frame
         static ros::Publisher opt_odom_inM_pub       = nh_ptr->advertise<nav_msgs::Odometry>("/opt_odom_inM", 100);
         
@@ -4469,6 +4471,7 @@ public:
             CloudXYZIPtr latestCloud(new CloudXYZI());
             pcl::transformPointCloud(*SwCloudDsk.back(), *latestCloud, sfPos.back().back(), sfQua.back().back());
             Util::publishCloud(lastcloud_pub, *latestCloud, ros::Time(SwTimeStep.back().back().final_time), slam_ref_frame);
+            Util::publishCloud(lastcloud_inB_pub, *SwCloudDsk.back(), ros::Time(SwTimeStep.back().back().final_time), slam_ref_frame);
             
             // Publish pose in map frame by the initial pose guess
             Vector3d posInM = tf_Lprior_L0_init*sfPos.back().back();
