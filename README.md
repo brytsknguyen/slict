@@ -42,6 +42,9 @@ The details of SLICT are presented in two RA-L papers. Please cite these works i
     <img src="docs/thumbnail.png" width=80% />
 </div>
 
+[arxiv](https://arxiv.org/abs/2211.03900)
+[RA-L](https://ieeexplore.ieee.org/document/10048526)
+
 ## SLICT 2 (current commit):
 
 Upgrades to using B-spline for trajectory representation, knot length as small as 0.01s, with an efficient solver that ensures real-time performance.
