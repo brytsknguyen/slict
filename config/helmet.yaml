@@ -51,7 +51,7 @@ BG_BOUND:           [ 0.3,  0.3,  0.4]
 BA_BOUND:           [ 0.3,  0.3,  0.4]
 
 # Number of packets to process at time
-WINDOW_SIZE:        3
+WINDOW_SIZE:        8
 # Number of substates to give to each packet
 N_SUB_SEG:          8
 # Spline order
@@ -72,7 +72,7 @@ reassoc_rate:       0
 use_ceres:          0
 
 # Downsampling grid size, chose -1 for no downsampling
-leaf_size:          0.2           # Downsample scale of input pointcloud, also the scale of ufomap leaf
+leaf_size:          0.1           # Downsample scale of input pointcloud, also the scale of ufomap leaf
 assoc_spacing:      0.2
 surfel_map_depth:   16
 surfel_min_point:   6
@@ -95,7 +95,7 @@ ds_rate:            [
 sweep_len:          1
 
 # Threshold to add new keyframe
-kf_min_dis:         1.0
+kf_min_dis:         2.0
 kf_min_angle:       10
 refine_kf:          0
 
@@ -126,11 +126,12 @@ fuse_velprop:       0
 fuse_marg:          1
 
 regularize_imu:     1
-imu_init_time:      0.1
+imu_init_time:      0.2
 lite_redeskew:      1
-max_outer_iters:    4
-max_lidar_factor:   6000    # Maximum number of lidar factors
+max_outer_iters:    5
+max_lidar_factor:   4000    # Maximum number of lidar factors
 dj_thres:           0.0     # Threshold to break the outer iterations early
+dx_thres:           0.05
 
 # Loop closure parameters
 loop_en:            1
