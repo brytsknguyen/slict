@@ -1966,6 +1966,10 @@ public:
 
             /* #endregion STEP 13: Transform everything to prior map frame ------------------------------------------*/
 
+            // Waiting for fit spline
+            if (threadFitSpline.joinable())
+                threadFitSpline.join();
+
             // Publish the loop time
             tlog.t_loop = tt_whileloop.Toc();
             static ros::Publisher tlog_pub = nh_ptr->advertise<slict::TimeLog>("/time_log", 100);
@@ -2717,7 +2721,7 @@ public:
                         if (fabs(ba[i]) > BAMAX[i])
                         {
                             ba_(i) = ba[i]/fabs(ba[i])*BAMAX[i];
-                            break;
+                            // break; // There is no need to break, need handle other dims.
                         }
                         else
                             ba_(i) = ba[i];
@@ -2728,7 +2732,7 @@ public:
                         if (fabs(bg[i]) > BGMAX[i])
                         {
                             bg_(i) = bg[i]/fabs(bg[i])*BGMAX[i];
-                            break;
+                            // break; // There is no need to break, need handle other dims.
                         }
                         else
                             bg_(i) = bg[i];
@@ -3566,7 +3570,7 @@ public:
         if (CloudCoef.size() != pointsCount)
         {
             // Initialize the coefficent buffer
-            CloudCoef.reserve(pointsCount);
+            CloudCoef.resize(pointsCount);
         }
 
         // Create a static associator

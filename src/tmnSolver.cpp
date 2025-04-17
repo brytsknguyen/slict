@@ -88,7 +88,7 @@ tmnSolver::tmnSolver(ros::NodeHandlePtr &nh_) : nh(nh_)
     nh->getParam("/ACC_W", ACC_W);
 
     // Dimension params
-    nh->param("WINDOW_SIZE", WINDOW_SIZE, 4);
+    nh->param("/WINDOW_SIZE", WINDOW_SIZE, 4);
     nh->param("/N_SUB_SEG", N_SUB_SEG, 4);
     nh->param("/SPLINE_N", SPLINE_N, 4);
     
