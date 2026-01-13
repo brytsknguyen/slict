@@ -39,10 +39,10 @@ class BPearlToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber bpearlCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Subscription<RosPc2Msg>::SharedPtr bpearlCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     bool remove_human_body = true;
 
@@ -50,17 +50,17 @@ public:
     // Destructor
     ~BPearlToOuster() {}
 
-    BPearlToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    BPearlToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
-        bpearlCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/rslidar_points", 50, &BPearlToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
+        bpearlCloudSub = nh_ptr->create_subscription<RosPc2Msg>("/rslidar_points", 50, std::bind(&BPearlToOuster::cloudHandler, this, std::placeholders::_1));
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/os_cloud_node/points", 50);
     }
 
-    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
+    void cloudHandler(const RosPc2Msg::ConstSharedPtr &msgIn)
     {
         pcl::PointCloud<PointBPearl> laserCloudBPearl;
         pcl::fromROSMsg(*msgIn, laserCloudBPearl);
-        
+
         int cloudsize = laserCloudBPearl.size();
 
         CloudOuster laserCloudOuster;
@@ -102,23 +102,22 @@ public:
         }
 
         Util::publishCloud(ousterCloudPub, laserCloudOuster,
-                           msgIn->header.stamp - ros::Duration(0.1),
+                           rclcpp::Time(msgIn->header.stamp) - rclcpp::Duration::from_seconds(0.1),
                            msgIn->header.frame_id);
     }
 };
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "bpearl_to_ouster");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("bpearl_to_ouster");
 
-    ROS_INFO(KGRN "----> BPearl to Ouster started" RESET);
-
+    RINFO(KGRN "----> BPearl to Ouster started" RESET);
     BPearlToOuster B2O(nh_ptr);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
 
     return 0;
 }

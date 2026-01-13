@@ -1,53 +1,42 @@
 <?xml version="1.0"?>
-<package>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
 
   <name>slict</name>
   <version>0.0.0</version>
-  <description>The slict package</description>
+  <description>TODO: Package description</description>
+  <maintainer email="tmn@todo.todo">tmn</maintainer>
+  <license>TODO: License declaration</license>
 
-  <maintainer email="thienminh.npn@gmail.com">tmn</maintainer>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
-  <license>TODO</license>
+  <depend>rclcpp</depend>
+  <!-- <depend>rclpy</depend> -->
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
 
-  <build_depend>roscpp</build_depend>
-  <run_depend>roscpp</run_depend>
-  <build_depend>rospy</build_depend>
-  <run_depend>rospy</run_depend>
-  
-  <build_depend>tf</build_depend>
-  <run_depend>tf</run_depend>
+  <!-- ROS packages -->
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2_ros</depend>
 
-  <build_depend>cv_bridge</build_depend>
-  <run_depend>cv_bridge</run_depend>
+  <!-- External packages -->
+  <depend>cf_msgs</depend>
+  <depend>livox_ros_driver2</depend>
 
-  <build_depend>pcl_conversions</build_depend>
-  <run_depend>pcl_conversions</run_depend>
+  <!-- Execution dependencies -->
+  <exec_depend>run_lio_sim.py</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
+  <!-- For the python node -->
+  <exec_depend>rclpy</exec_depend>
 
-  <!-- <build_depend>sophus</build_depend>
-  <run_depend>sophus</run_depend> -->
-
-  <build_depend>std_msgs</build_depend>
-  <run_depend>std_msgs</run_depend>
-  <build_depend>sensor_msgs</build_depend>
-  <run_depend>sensor_msgs</run_depend>
-  <build_depend>geometry_msgs</build_depend>
-  <run_depend>geometry_msgs</run_depend>
-  <build_depend>nav_msgs</build_depend>
-  <run_depend>nav_msgs</run_depend>
-
-  <build_depend>message_generation</build_depend>
-  <run_depend>message_generation</run_depend>
-  <build_depend>message_runtime</build_depend>
-  <run_depend>message_runtime</run_depend>
-
-
-  <build_depend>ufomap_msgs</build_depend>
-  <run_depend>ufomap_msgs</run_depend>
-  <build_depend>ufomap_ros</build_depend>
-  <run_depend>ufomap_ros</run_depend>
-
-  <build_depend>ufomap</build_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+    <!-- <build_type>ament_python</build_type> -->
+    <!-- <meshes>meshes/cartinbot_viz.stl</meshes> -->
+  </export>
 
 </package>

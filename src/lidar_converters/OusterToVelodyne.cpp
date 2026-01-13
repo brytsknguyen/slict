@@ -42,10 +42,10 @@ class OusterToVelodyne
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber ousterCloudSub;
-    ros::Publisher velodyneCloudPub;
+    rclcpp::Subscription<RosPc2Msg>::SharedPtr ousterCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr velodyneCloudPub;
 
     int NUM_CORE;
 
@@ -55,15 +55,15 @@ public:
     // Destructor
     ~OusterToVelodyne() {}
 
-    OusterToVelodyne(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    OusterToVelodyne(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
-        ousterCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50, &OusterToVelodyne::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        velodyneCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/velodyne_points", 50);
+        ousterCloudSub = nh_ptr->create_subscription<RosPc2Msg>("/os_cloud_node/points", 50, &OusterToVelodyne::cloudHandler, this, ros::TransportHints().tcpNoDelay());
+        velodyneCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/velodyne_points", 50);
     }
 
-    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
+    void cloudHandler(const RosPc2Msg::ConstSharedPtr &msgIn)
     {
         CloudOuster laserCloudOuster;
         pcl::fromROSMsg(*msgIn, laserCloudOuster);
@@ -97,9 +97,9 @@ int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ouster_to_velodyne");
     ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    RosNodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
-    ROS_INFO(KGRN "----> Ouster to Velodyne started" RESET);
+    RINFO(KGRN "----> Ouster to Velodyne started" RESET);
 
     OusterToVelodyne O2V(nh_ptr);
 

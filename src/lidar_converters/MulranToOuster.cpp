@@ -57,10 +57,10 @@ class MulranToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber mulranCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Subscription<RosPc2Msg>::SharedPtr mulranCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     int NUM_CORE;
 
@@ -70,15 +70,15 @@ public:
     // Destructor
     ~MulranToOuster() {}
 
-    MulranToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    MulranToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
-        mulranCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/Ouster_Points", 50, &MulranToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
+        mulranCloudSub = nh_ptr->create_subscription<RosPc2Msg>("/Ouster_Points", 50, std::bind(&MulranToOuster::cloudHandler, this, std::placeholders::_1));
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/os_cloud_node/points", 50);
     }
 
-    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
+    void cloudHandler(const RosPc2Msg::ConstSharedPtr &msgIn)
     {
         CloudMulran laserCloudMulran;
         pcl::fromROSMsg(*msgIn, laserCloudMulran);
@@ -110,16 +110,15 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "velodyne_to_ouster");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("Mulran_to_ouster");
 
-    ROS_INFO(KGRN "----> Velodyne to Ouster started" RESET);
-
+    RINFO(KGRN "----> Mulran to Ouster started" RESET);
     MulranToOuster C2P(nh_ptr);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
 
     return 0;
 }

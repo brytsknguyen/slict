@@ -39,10 +39,10 @@ class M2DGRToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber velodyneCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Subscription<RosPc2Msg>::SharedPtr velodyneCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     int NUM_CORE;
 
@@ -52,7 +52,7 @@ public:
     // Destructor
     ~M2DGRToOuster() {}
 
-    M2DGRToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    M2DGRToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
@@ -60,11 +60,11 @@ public:
         // nh_ptr->param("remove_human_body", remove_human_body_, 0);
         // remove_human_body = (remove_human_body_ == 0)?false:true;
 
-        velodyneCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/velodyne_points", 50, &M2DGRToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
+        velodyneCloudSub = nh_ptr->create_subscription<RosPc2Msg>("/velodyne_points", 50, std::bind(&M2DGRToOuster::cloudHandler, this, std::placeholders::_1));
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/os_cloud_node/points", 50);
     }
 
-    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
+    void cloudHandler(const RosPc2Msg::ConstSharedPtr &msgIn)
     {
         CloudVelodyne laserCloudVelodyne;
         pcl::fromROSMsg(*msgIn, laserCloudVelodyne);
@@ -97,16 +97,16 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "velodyne_to_ouster");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("m2dgr_to_ouster");
 
-    ROS_INFO(KGRN "----> Velodyne to Ouster started" RESET);
-
+    RINFO(KGRN "----> M2DGR to Ouster started" RESET);
     M2DGRToOuster C2P(nh_ptr);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
+
 
     return 0;
 }

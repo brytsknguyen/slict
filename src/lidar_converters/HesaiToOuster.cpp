@@ -39,10 +39,10 @@ class HesaiToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber hesaiCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Subscription<RosPc2Msg>::SharedPtr hesaiCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     bool remove_human_body = true;
 
@@ -50,17 +50,17 @@ public:
     // Destructor
     ~HesaiToOuster() {}
 
-    HesaiToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    HesaiToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
-        hesaiCloudSub = nh_ptr->subscribe<sensor_msgs::PointCloud2>("/hesai/pandar", 50, &HesaiToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node/points", 50);
+        hesaiCloudSub = nh_ptr->create_subscription<RosPc2Msg>("/hesai/pandar", 50, std::bind(&HesaiToOuster::cloudHandler, this, std::placeholders::_1));
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/os_cloud_node/points", 50);
     }
 
-    void cloudHandler(const sensor_msgs::PointCloud2ConstPtr &msgIn)
+    void cloudHandler(const RosPc2Msg::ConstSharedPtr &msgIn)
     {
         pcl::PointCloud<PointHesai> laserCloudHesai;
         pcl::fromROSMsg(*msgIn, laserCloudHesai);
-        
+
         int cloudsize = laserCloudHesai.size();
 
         CloudOuster laserCloudOuster;
@@ -80,7 +80,7 @@ public:
             dst.z = src.z;
             dst.intensity = src.intensity * hsToOusterIntensity;
             dst.ring = src.ring;
-            dst.t = (int)((src.timestamp - msgIn->header.stamp.toSec()) * 1e9f);
+            dst.t = (int)((src.timestamp - rclcpp::Time(msgIn->header.stamp).seconds()) * 1e9f);
             dst.range = sqrt(src.x*src.x + src.y*src.y + src.z*src.z)*1000.0;
 
             // Remove points on the carrier
@@ -103,16 +103,15 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "hesai_to_ouster");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("hesai_to_ouster");
 
-    ROS_INFO(KGRN "----> hesai to Ouster started" RESET);
-
+    RINFO(KGRN "----> hesai to Ouster started" RESET);
     HesaiToOuster H2O(nh_ptr);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
 
     return 0;
 }

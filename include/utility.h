@@ -1,25 +1,25 @@
 /**
 * This file is part of slict.
-* 
+*
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
-* 
+*
 * For more information please see <https://britsknguyen.github.io>.
 * or <https://github.com/britsknguyen/slict>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
-* 
+*
 * slict is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
-* 
+*
 * slict is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
-* 
+*
 * You should have received a copy of the GNU General Public License
 * along with slict.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -54,56 +54,33 @@
 #include <mutex>
 #include <glob.h>
 
-// ROS
-#include <ros/ros.h>
-#include <std_msgs/Header.h>
-#include <std_msgs/Float64MultiArray.h>
-#include <std_msgs/String.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/NavSatFix.h>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
-#include <tf/LinearMath/Quaternion.h>
-#include <tf/transform_listener.h>
-#include <tf/transform_datatypes.h>
-#include <tf/transform_broadcaster.h>
+#include <Eigen/Sparse>
 
-// Opencv
-#include <opencv2/opencv.hpp>
+// ROS
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/header.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include "tf2_msgs/msg/tf_message.hpp"
 
 // PCL
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-// #include <pcl/search/impl/search.hpp>
-// #include <pcl/range_image/range_image.h>
 #include <pcl/kdtree/kdtree_flann.h>
-// #include <pcl/common/common.h>
-// #include <pcl/common/transforms.h>
 #include <pcl/registration/icp.h>
 #include <pcl/io/pcd_io.h>
-// #include <pcl/filters/filter.h>
-// #include <pcl/filters/voxel_grid.h>
-// #include <pcl/filters/crop_box.h>
 #include <pcl_conversions/pcl_conversions.h>
-
-// UFO map
-#include <ufo/math/vector3.h>
-#include <ufo/map/point_cloud.h>
-#include <ufo/map/surfel_map.h>
 
 // Sophus
 #include <sophus/se3.hpp>
 
 // Ceres
 #include <ceres/ceres.h>
-
-// Basalt
-#include "basalt/spline/se3_spline.h"
-#include "basalt/spline/ceres_spline_helper.h"
-#include "basalt/spline/ceres_local_param.hpp"
 
 // ikdtree
 #include <ikdTree/ikd_Tree.h>
@@ -121,19 +98,17 @@ using namespace Eigen;
 #define KWHT  "\x1B[37m"
 #define RESET "\033[0m"
 
-#define yolo() printf("Hello line: %s:%d. \n", __FILE__ , __LINE__);
-#define yolos(...) printf("Hello line: %s:%d. ", __FILE__, __LINE__); printf(__VA_ARGS__); std::cout << std::endl;
 #define MAX_THREADS std::thread::hardware_concurrency()/2
 
 // Shortened typedef matching character length of Vector3d and Matrix3d
 typedef Eigen::Quaterniond Quaternd;
 typedef Eigen::Quaterniond Quaternf;
 
-
 // Shorthand for sophus objects
 typedef Sophus::SO3<double> SO3d;
 typedef Sophus::SE3<double> SE3d;
 
+typedef rclcpp::Node::SharedPtr RosNodeHandlePtr;
 
 /* #region  Custom point type definition ----------------------------------------------------------------------------*/
 
@@ -200,10 +175,10 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(PointBPearl,
                                  (double, timestamp, timestamp)
                                  (uint16_t, ring, ring))
 
-struct PointTQXYZI 
+struct PointTQXYZI
 {
     PCL_ADD_POINT4D
-    PCL_ADD_INTENSITY;              // preferred way of adding a XYZ+padding
+    PCL_ADD_INTENSITY              // preferred way of adding a XYZ+padding
     double t;
     float  qx;
     float  qy;
@@ -223,7 +198,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(PointTQXYZI,
 struct PointXYZIT
 {
     PCL_ADD_POINT4D;
-    PCL_ADD_INTENSITY;
+    PCL_ADD_INTENSITY
     double t;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;
@@ -255,18 +230,36 @@ typedef pcl::KdTreeFLANN<PointXYZI>::Ptr KdFLANNPtr;
 
 typedef vector<PointXYZI, Eigen::aligned_allocator<PointXYZI>> ikdtPointVec;
 typedef KD_TREE<PointXYZI> ikdtree;
-typedef boost::shared_ptr<ikdtree> ikdtreePtr;
+typedef std::shared_ptr<ikdtree> ikdtreePtr;
 
 /* #endregion  Custom point type definition -------------------------------------------------------------------------*/
 
 
 /* #region  Image pointer shortened name ----------------------------------------------------------------------------*/
 
-typedef sensor_msgs::Imu::ConstPtr RosImuPtr;
-typedef sensor_msgs::Image::Ptr RosImgPtr;
-typedef sensor_msgs::Image::ConstPtr RosImgConstPtr;
-// typedef map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> VisFeatureFrame;
-// typedef pair<double, VisFeatureFrame> StampedVisFeatureFrame;
+typedef sensor_msgs::msg::Imu RosImuMsg;
+typedef sensor_msgs::msg::Imu::SharedPtr RosImuMsgPtr;
+
+typedef sensor_msgs::msg::Image RosImgMsg;
+typedef sensor_msgs::msg::Image::SharedPtr RosImgMsgPtr;
+
+typedef sensor_msgs::msg::PointCloud2 RosPc2Msg;
+typedef sensor_msgs::msg::PointCloud2::SharedPtr RosPc2MsgPtr;
+
+typedef tf2_msgs::msg::TFMessage RosTf2Msg;
+typedef tf2_msgs::msg::TFMessage::SharedPtr RosTf2MsgPtr;
+
+typedef geometry_msgs::msg::PoseStamped RosPoseStampedMsg;
+typedef geometry_msgs::msg::PoseStamped::SharedPtr RosPoseStampedMsgPtr;
+
+typedef nav_msgs::msg::Odometry RosOdomMsg;
+typedef nav_msgs::msg::Odometry::SharedPtr RosOdomMsgPtr;
+
+typedef nav_msgs::msg::Path RosPathMsg;
+typedef nav_msgs::msg::Path::SharedPtr RosPathMsgPtr;
+
+typedef visualization_msgs::msg::Marker RosMarkerMsg;
+typedef visualization_msgs::msg::Marker::SharedPtr RosMarkerMsgPtr;
 
 /* #endregion Image pointer shortened name --------------------------------------------------------------------------*/
 
@@ -335,7 +328,7 @@ struct myTf
     {
         return myTf();
     }
-    
+
     myTf(const myTf<T> &other)
     {
         rot = other.rot;
@@ -381,28 +374,34 @@ struct myTf
         this->pos << point.x, point.y, point.z;
     }
 
-    myTf(const nav_msgs::Odometry &odom)
+    myTf(const nav_msgs::msg::Odometry &odom)
     {
         this->rot = Quaternion<T>(odom.pose.pose.orientation.w,
                                     odom.pose.pose.orientation.x,
                                     odom.pose.pose.orientation.y,
                                     odom.pose.pose.orientation.z);
-                                    
+
         this->pos << odom.pose.pose.position.x,
                      odom.pose.pose.position.y,
                      odom.pose.pose.position.z;
     }
 
-    myTf(const geometry_msgs::PoseStamped &pose)
+    myTf(const geometry_msgs::msg::PoseStamped &pose)
     {
         this->rot = Quaternion<T>(pose.pose.orientation.w,
                                   pose.pose.orientation.x,
                                   pose.pose.orientation.y,
                                   pose.pose.orientation.z);
-                                    
+
         this->pos << pose.pose.position.x,
                      pose.pose.position.y,
                      pose.pose.position.z;
+    }
+
+    myTf(const Sophus::SE3<T> se3)
+    {
+        this->rot = se3.unit_quaternion();
+        this->pos = se3.translation();
     }
 
     myTf(Eigen::Transform<T, 3, Eigen::TransformTraits::Affine> transform)
@@ -439,7 +438,7 @@ struct myTf
 
         return p;
     }
-    
+
     PointPose Pose6D() const
     {
         PointPose p;
@@ -465,7 +464,7 @@ struct myTf
         PointPose p;
 
         p.t = time;
-        
+
         p.x = (float)pos.x();
         p.y = (float)pos.y();
         p.z = (float)pos.z();
@@ -478,6 +477,26 @@ struct myTf
         p.intensity = -1;
 
         return p;
+    }
+
+    RosOdomMsg rosOdom()
+    {
+        RosOdomMsg msg;
+        msg.pose.pose.position.x = pos.x();
+        msg.pose.pose.position.y = pos.y();
+        msg.pose.pose.position.z = pos.z();
+        msg.pose.pose.orientation.x = rot.x();
+        msg.pose.pose.orientation.y = rot.y();
+        msg.pose.pose.orientation.z = rot.z();
+        msg.pose.pose.orientation.w = rot.w();
+        return msg;
+    }
+
+    myTf<T> slerp(double s, myTf<T> tfend)
+    {
+        Quaternion<T> qs = this->rot.slerp(s, tfend.rot);
+        Eigen::Matrix<T, 3, 1> ps = (1-s)*(this->pos) + s*(tfend.pos);
+        return myTf<T>(qs, ps);
     }
 
     template <typename Tout = double>
@@ -527,7 +546,7 @@ struct myTf
     {
         return (rot*v + pos);
     }
-    
+
     Quaternd operator*(const Quaternd &q) const
     {
         return (rot*q);
@@ -553,8 +572,8 @@ typedef myTf<> mytf;
 
 namespace Util
 {
-    inline void ComputeCeresCost(vector<ceres::internal::ResidualBlock *> &res_ids,
-                          double &cost, ceres::Problem &problem)
+    inline void ComputeCeresCost(const vector<ceres::internal::ResidualBlock *> &res_ids,
+                                 double &cost, ceres::Problem &problem)
     {
         if (res_ids.size() == 0)
         {
@@ -578,17 +597,37 @@ namespace Util
         vecA = vecTemp;
     }
 
-    template <typename PointType>
-    sensor_msgs::PointCloud2 publishCloud(ros::Publisher &thisPub,
-                                          pcl::PointCloud<PointType> &thisCloud,
-                                          ros::Time thisStamp, std::string thisFrame)
+    template <typename T = double>
+    void SetSparseMatBlock(Eigen::SparseMatrix<T> &spMat, int startRow, int startCol, const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& block, bool makeCompressed = true)
     {
-        sensor_msgs::PointCloud2 tempCloud;
+        for (int i = 0; i < block.rows(); ++i)
+            for (int j = 0; j < block.cols(); ++j)
+                spMat.insert(startRow + i, startCol + j) = block(i, j);
+        if(makeCompressed)
+            spMat.makeCompressed();
+    }
+
+    template <typename T = double>
+    void SetSparseMatBlock(Eigen::SparseMatrix<T> &spMat, int startRow, int startCol, const Eigen::SparseMatrix<T>& block, bool makeCompressed = true)
+    {
+        for (int i = 0; i < block.rows(); ++i)
+            for (int j = 0; j < block.cols(); ++j)
+                spMat.insert(startRow + i, startCol + j) = block.coeff(i, j);
+        if(makeCompressed)
+            spMat.makeCompressed();
+    }
+
+    template <typename PointType>
+    RosPc2Msg publishCloud(rclcpp::Publisher<RosPc2Msg>::SharedPtr thisPub,
+                                          pcl::PointCloud<PointType> &thisCloud,
+                           rclcpp::Time thisStamp, std::string thisFrame)
+    {
+        RosPc2Msg tempCloud;
         pcl::toROSMsg(thisCloud, tempCloud);
         tempCloud.header.stamp = thisStamp;
         tempCloud.header.frame_id = thisFrame;
         // if (thisPub.getNumSubscribers() != 0)
-            thisPub.publish(tempCloud);
+            thisPub->publish(tempCloud);
         return tempCloud;
     }
 
@@ -909,7 +948,7 @@ namespace Util
     inline PointT transform_point(const mytf &tf, const PointT &pi)
     {
         Vector3d pos = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
-        
+
         PointT po = pi;
         po.x = pos.x();
         po.y = pos.y();
@@ -918,11 +957,21 @@ namespace Util
         return po;
     }
 
+    template <typename PointT>
+    void transform_point(const mytf &tf, const PointT &pi, PointT &po)
+    {
+        Vector3d pos = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
+
+        po.x = pos.x();
+        po.y = pos.y();
+        po.z = pos.z();
+    }
+
     inline PointPose transform_point(const mytf &tf, const PointPose &pi)
     {
         Vector3d pos = tf.rot * Vector3d(pi.x, pi.y, pi.z) + tf.pos;
         Quaternd rot = tf.rot * Quaternd(pi.qw, pi.qx, pi.qy, pi.qz);
-        
+
         PointPose po;
         po.x  = pos.x();
         po.y  = pos.y();
@@ -1091,8 +1140,45 @@ namespace Util
         // return true;
     }
 
+    inline bool GetBoolParam(const RosNodeHandlePtr &nh, const string &param_name, bool default_value)
+    {
+        if(!nh->has_parameter(param_name))
+            nh->declare_parameter(param_name, rclcpp::PARAMETER_INTEGER);
+
+        int param_ = default_value ? 1 : 0;
+        nh->get_parameter(param_name, param_);
+        return (param_ == 1 ? true : false);
+    }
+
+    // inline double GetDoubleParam(const RosNodeHandlePtr &nh, const string &param, double default_value=0)
+    // {
+    //     nh->declare_parameter(param, rclcpp::PARAMETER_DOUBLE);
+    //     double value = default_value;
+    //     value = nh->get_parameter(param).as_double();
+    //     return value;
+    // }
+
+    // inline string GetStringParam(const RosNodeHandlePtr &nh, const string &param, string default_value="")
+    // {
+    //     nh->declare_parameter(param, rclcpp::PARAMETER_STRING);
+    //     string value = default_value;
+    //     value = nh->get_parameter(param).as_string();
+    //     return value;
+    // }
+
+    template <typename T>
+    inline bool GetParam(const RosNodeHandlePtr &nh, const string &param_name, T &param)
+    {
+        if(!nh->has_parameter(param_name))
+            nh->declare_parameter(param_name, param);
+        return nh->get_parameter(param_name, param);
+    }
+
 }; // namespace Util
 
+
+template <typename T>
+shared_ptr<T> getEigenPtr(T &X) { return shared_ptr<T>(&X, [](T *x){}); }
 
 class ImuSample
 {
@@ -1100,9 +1186,9 @@ public:
 
     ImuSample();
 
-    ImuSample(RosImuPtr const& msg)
+    ImuSample(RosImuMsgPtr const &msg)
     {
-        t = msg->header.stamp.toSec();
+        t = rclcpp::Time(msg->header.stamp).seconds();
         gyro = Vector3d(msg->angular_velocity.x,
                         msg->angular_velocity.y,
                         msg->angular_velocity.z);
@@ -1119,7 +1205,7 @@ public:
         gyro = other.gyro;
         acce = other.acce;
     }
-    
+
     ImuSample(double t_, Vector3d gyro_, Vector3d acce_)
         : t(t_), gyro(gyro_), acce(acce_) {};
 
@@ -1134,7 +1220,7 @@ public:
 class ImuSequence
 {
 public:
-    
+
    ~ImuSequence()
     {
         data.clear();
@@ -1182,7 +1268,7 @@ public:
         if (newSequence.back().t != final_time)
             newSequence.push_back(this->interpolate(final_time));
 
-        return newSequence;    
+        return newSequence;
     }
 
     ImuSample interpolate(double t)
@@ -1192,7 +1278,7 @@ public:
             printf(KMAG "Point time %f is earlier than [%f, %f]. "
                         "Returning sample at start time.\n" RESET, t, data.front().t, data.back().t);
 
-            return data.front();    
+            return data.front();
         }
 
         if (t > data.back().t)
@@ -1200,7 +1286,7 @@ public:
             printf(KMAG "Point time %f is later than [%f, %f]. "
                         "Returning sample at start time.\n" RESET, t, data.front().t, data.back().t);
 
-            return data.back();    
+            return data.back();
         }
 
         for(int i = 0; i < data.size(); i++)
@@ -1208,11 +1294,11 @@ public:
             // Check if we can return the sample at the exact time
             if (data[i].t == t)
                 return data[i];
-            
+
             if (data[i].t < t && t < data[i+1].t)
             {
                 double s = (t - data[i].t)/(data[i+1].t - data[i].t);
-                
+
                 Vector3d gyro = (1-s)*data[i].gyro + s*data[i+1].gyro;
                 Vector3d acce = (1-s)*data[i].acce + s*data[i+1].acce;
 
@@ -1245,12 +1331,12 @@ public:
         ImuSequence s_(*this); s_ += s;
         return s_;
     }
-    
+
     ImuSample& front()
     {
         return data.front();
     }
-    
+
     ImuSample& back()
     {
         return data.back();
@@ -1265,14 +1351,20 @@ public:
     {
         return data.empty();
     }
-    
+
     double startTime()
     {
+        if (data.size() == 0)
+            return -1;
+        else
         return data.front().t;
     }
 
     double finalTime()
     {
+        if (data.size() == 0)
+            return -1;
+        else
         return data.back().t;
     }
 
@@ -1310,7 +1402,7 @@ public:
     deque<Vector3d> V;
 
     Vector3d bg; Vector3d ba; Vector3d grav;
-    
+
     deque<Vector3d> gyr;
     deque<Vector3d> acc;
 
@@ -1358,7 +1450,7 @@ public:
     void reset(Quaternd &Q0, Vector3d &P0, Vector3d &V0, Vector3d &bg_, Vector3d &ba_, Vector3d &gyr0, Vector3d &acc0, Vector3d &grav_, double t0)
     {
         t = { t0 };
-        
+
         Q = { Q0 };
         P = { P0 };
         V = { V0 };
@@ -1369,7 +1461,7 @@ public:
         bg = bg_; ba = ba_; grav = grav_;
     }
 
-    void forwardPropagate(const RosImuPtr &msg)
+    void forwardPropagate(const RosImuMsgPtr &msg)
     {
         Vector3d gyrn(msg->angular_velocity.x,
                       msg->angular_velocity.y,
@@ -1379,7 +1471,7 @@ public:
                       msg->linear_acceleration.y,
                       msg->linear_acceleration.z);
 
-        double tn = msg->header.stamp.toSec();
+        double tn = rclcpp::Time(msg->header.stamp).seconds();
 
         forwardPropagate(gyrn, accn, tn);
     }
@@ -1470,7 +1562,7 @@ public:
 
     mytf getTf(double ts, bool warning=true) const
     {
-        ROS_ASSERT(t.size() >= 1);
+        assert(t.size() >= 1);
 
         if (ts < t.front())
         {
@@ -1491,7 +1583,7 @@ public:
             double dt    = ts - t.back();
             Vector3d pos = pos + V.back()*dt + acc.back()*dt*dt*0.5;
             Quaternd rot = Q.back()*Util::QExp((gyr.back() - bg) * dt);
-                
+
             return (mytf(rot, pos));
         }
         else
@@ -1505,7 +1597,7 @@ public:
                     Quaternd Qs = Q[i]*Quaternd::Identity().slerp(s, Q[i].inverse()*Q[i+1]);
                     Vector3d Ps = (1 - s)*P[i] + s*P[i+1];
 
-                    return (mytf(Qs, Ps));   
+                    return (mytf(Qs, Ps));
                 }
             }
         }
@@ -1546,7 +1638,7 @@ public:
 struct LidarCoef
 {
     double   t     = -1;  // Time stamp
-    double   t_    = -1;
+    // double   t_    = -1;
     int      ptIdx = -1;  // Index of points in the pointcloud
     Vector3d f;           // Coordinate of point in body frame
     Vector3d fdsk;        // Coordinate of point in body frame, deskewed
@@ -1562,36 +1654,80 @@ struct LidarCoef
     bool marginalized = false;
 };
 
+struct TDOAData {
+  double t;         // Time stamp
+  int idA;          // Index of anchor A
+  int idB;          // Index of anchor B
+  double data;      // TDOA measurement
+  TDOAData(double s, int idxA, int idxB, double r) : t(s), idA(idxA), idB(idxB), data(r) {};
+};
+
+struct CornerData {
+  double t;         // Time stamp
+  vector<int> id;
+  vector<Eigen::Vector2d> proj;      // corner positions
+  CornerData(double s, vector<int> index, vector<Eigen::Vector2d> corner) : t(s), id(index), proj(corner) {};
+};
+
+struct IMUData {
+  double t;            // Time stamp
+  Eigen::Vector3d acc; // acceleration measurement
+  Eigen::Vector3d gyro;// gyroscope measurement
+  IMUData(double s, const Eigen::Vector3d& acc_, const Eigen::Vector3d& gyro_) : t(s), acc(acc_), gyro(gyro_) {};
+};
 
 // Interfacing ufo::map data with Eigen
-namespace ufo::math
-{
-    template<typename T>
-    Eigen::Vector3d toEigen(ufo::math::Vector3<T> v)
-    {
-        return Eigen::Vector3d(v.x, v.y, v.z);
-    }
-}
+// namespace ufo::math
+// {
+//     template<typename T>
+//     Eigen::Vector3d toEigen(ufo::math::Vector3<T> v)
+//     {
+//         return Eigen::Vector3d(v.x, v.y, v.z);
+//     }
+// }
+
+
+// template <typename PointType>
+// void insertCloudToSurfelMap(ufo::map::SurfelMap &map,
+//                             pcl::PointCloud<PointType> &pclCloud)
+// {
+//     int cloudSize = pclCloud.size();
+
+//     ufo::map::PointCloud ufoCloud;
+//     ufoCloud.resize(cloudSize);
+
+//     #pragma omp parallel for num_threads(omp_get_max_threads())
+//     for(int i = 0; i < cloudSize; i++)
+//     {
+//         ufoCloud[i].x = (float)pclCloud.points[i].x;
+//         ufoCloud[i].y = (float)pclCloud.points[i].y;
+//         ufoCloud[i].z = (float)pclCloud.points[i].z;
+//     }
+
+//     map.insertSurfelPoint(std::begin(ufoCloud), std::end(ufoCloud));
+// }
 
 
 template <typename PointType>
-void insertCloudToSurfelMap(ufo::map::SurfelMap &map,
-                            pcl::PointCloud<PointType> &pclCloud)
+void insertCloudToikdTree(ikdtreePtr &map, pcl::PointCloud<PointType> &pclCloud, bool downsample=true)
 {
-    int cloudSize = pclCloud.size();
-
-    ufo::map::PointCloud ufoCloud;
-    ufoCloud.resize(cloudSize);
-
-    #pragma omp parallel for num_threads(omp_get_max_threads())
-    for(int i = 0; i < cloudSize; i++)
+    if constexpr (std::is_same<PointType, PointXYZI>::value)
     {
-        ufoCloud[i].x = (float)pclCloud.points[i].x;
-        ufoCloud[i].y = (float)pclCloud.points[i].y;
-        ufoCloud[i].z = (float)pclCloud.points[i].z;
+        if(map->Root_Node == nullptr)
+            map->Build(pclCloud.points);
+        else
+            map->Add_Points(pclCloud.points, downsample);
     }
+    else
+    {
+        CloudXYZI cloud;
+        pcl::copyPointCloud(pclCloud, cloud);
 
-    map.insertSurfelPoint(std::begin(ufoCloud), std::end(ufoCloud));
+        if(map->Root_Node == nullptr)
+            map->Build(cloud.points);
+        else
+            map->Add_Points(cloud.points, downsample);
+    }
 }
 
 
@@ -1599,7 +1735,7 @@ inline CloudXYZI toCloudXYZI(CloudXYZIT &inCloud)
 {
     int cloudSize = inCloud.size();
     CloudXYZI outCloud; outCloud.resize(cloudSize);
-    
+
     #pragma omp parallel for num_threads(omp_get_max_threads())
     for(int i = 0; i < cloudSize; i++)
     {
@@ -1624,15 +1760,42 @@ inline std::string myprintf(const std::string& format, ...)
     va_start(args, format);
     std::vsnprintf(&vec[0], len + 1, format.c_str(), args);
     va_end(args);
-    
+
     return string(vec.begin(), vec.end() - 1);
 }
 
+template <typename... Args>
+void RINFO(RosNodeHandlePtr &nh, Args... args)
+{
+    RCLCPP_INFO(nh->get_logger(), args...);
+}
+
+template <typename... Args>
+string RINFO(Args... args)
+{
+    string msg = myprintf(args...);
+    cout << msg << endl;
+    return msg;
+}
+
+#define ROS_ASSERT_MSG(expr, format, ...) \
+    do { \
+        if (!(expr)) { \
+            string msg = myprintf(format, __VA_ARGS__); \
+            RCLCPP_ERROR(rclcpp::get_logger("assertion"), \
+                         "Assertion failed: (%s) at %s:%d. Message: %s", \
+                         #expr, __FILE__, __LINE__, msg.c_str()); \
+            std::abort(); \
+        } \
+    } while (0)
+
+#define yolo() cout << myprintf("Hello line: %s:%d.", __FILE__ , __LINE__) << endl;
+#define yolos(...) cout << (myprintf("Hello line: %s:%d. ", __FILE__, __LINE__) + myprintf(__VA_ARGS__)) << endl;
 
 inline bool file_exist(const std::string& name)
 {
-  struct stat buffer;   
-  return (stat (name.c_str(), &buffer) == 0); 
+  struct stat buffer;
+  return (stat (name.c_str(), &buffer) == 0);
 }
 
 
@@ -1662,7 +1825,7 @@ inline string zeroPaddedString(int num, int max)
             num_digit = 1;
             break;
         }
-        
+
         if (pow(10, num_digit) > num)
             break;
         else
@@ -1676,7 +1839,7 @@ inline string zeroPaddedString(int num, int max)
             max_digit = 1;
             break;
         }
-        
+
         if (pow(10, max_digit) > max)
             break;
         else
@@ -1692,5 +1855,22 @@ inline string zeroPaddedString(int num, int max)
     return (num_str + std::to_string(num));
 }
 
+inline uint64_t toNSec(const builtin_interfaces::msg::Time &stamp)
+{
+    return static_cast<uint64_t>(stamp.sec) * 1e9 + stamp.nanosec;
+}
+
+inline double toSec(const builtin_interfaces::msg::Time &stamp)
+{
+    return stamp.sec + stamp.nanosec * 1e-9;
+}
+
+inline rclcpp::Time toRosTime(double &time)
+{
+    int32_t sec = static_cast<int32_t>(time);
+    uint32_t nanosec = static_cast<uint32_t>((time - sec) * 1e9);
+
+    return rclcpp::Time(sec, nanosec);
+}
 
 #endif

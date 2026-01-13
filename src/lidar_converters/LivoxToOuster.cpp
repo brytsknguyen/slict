@@ -29,7 +29,7 @@
 
 #include "utility.h"
 
-#include <livox_ros_driver/CustomMsg.h>
+#include "livox_ros_driver2/msg/custom_msg.hpp"
 
 // const int queueLength = 2000;
 
@@ -37,14 +37,16 @@ using namespace std;
 using namespace Eigen;
 using namespace pcl;
 
+typedef livox_ros_driver2::msg::CustomMsg LivoxCustomMsg;
+
 class LivoxToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
-    ros::Subscriber livoxCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Subscription<LivoxCustomMsg>::SharedPtr livoxCloudSub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     double intensityConvCoef = -1;
 
@@ -56,18 +58,21 @@ public:
     // Destructor
     ~LivoxToOuster() {}
 
-    LivoxToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    LivoxToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
         // Coefficient to convert the intensity from livox to ouster
-        nh_ptr->param("intensityConvCoef", intensityConvCoef, 1.0);
+        intensityConvCoef = 1.0;
+        Util::GetParam(nh_ptr, "intensityConvCoef", intensityConvCoef);
 
-        livoxCloudSub = nh_ptr->subscribe<livox_ros_driver::CustomMsg>("/livox/lidar", 50, &LivoxToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/livox/lidar_ouster", 50);
+        // Create subscription of livox cloud
+        livoxCloudSub = nh_ptr->create_subscription<LivoxCustomMsg>("/livox/lidar", 50, std::bind(&LivoxToOuster::cloudHandler, this, std::placeholders::_1));
+        // Create publisher of ouster cloud
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/livox/lidar_ouster", 50);
     }
 
-    void cloudHandler(const livox_ros_driver::CustomMsg::ConstPtr &msgIn)
+    void cloudHandler(const LivoxCustomMsg::ConstSharedPtr &msgIn)
     {
         int cloudsize = msgIn->points.size();
 
@@ -95,16 +100,15 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "velodyne_to_ouster");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("livox_to_ouster");
 
-    ROS_INFO(KGRN "----> Velodyne to Ouster started" RESET);
-
+    RINFO(KGRN "----> Livox to Ouster started" RESET);
     LivoxToOuster C2P(nh_ptr);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
 
     return 0;
 }

@@ -41,10 +41,10 @@ class Livox2ToOuster
 {
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
     ros::Subscriber livoxCloudSub;
-    ros::Publisher ousterCloudPub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr ousterCloudPub;
 
     double intensityConvCoef = -1;
 
@@ -56,15 +56,15 @@ public:
     // Destructor
     ~Livox2ToOuster() {}
 
-    Livox2ToOuster(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    Livox2ToOuster(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         NUM_CORE = omp_get_max_threads();
 
         // Coefficient to convert the intensity from livox to ouster
         nh_ptr->param("intensityConvCoef", intensityConvCoef, 1.0);
 
-        livoxCloudSub = nh_ptr->subscribe<livox_ros_driver2::CustomMsg>("/livox/lidar", 50, &Livox2ToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
-        ousterCloudPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/livox/lidar_ouster", 50);
+        livoxCloudSub = nh_ptr->create_subscription<livox_ros_driver2::CustomMsg>("/livox/lidar", 50, &Livox2ToOuster::cloudHandler, this, ros::TransportHints().tcpNoDelay());
+        ousterCloudPub = nh_ptr->create_publisher<RosPc2Msg>("/livox/lidar_ouster", 50);
     }
 
     void cloudHandler(const livox_ros_driver2::CustomMsg::ConstPtr &msgIn)
@@ -97,9 +97,9 @@ int main(int argc, char **argv)
 {
     ros::init(argc, argv, "velodyne_to_ouster");
     ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    RosNodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
-    ROS_INFO(KGRN "----> Velodyne to Ouster started" RESET);
+    RINFO(KGRN "----> Velodyne to Ouster started" RESET);
 
     Livox2ToOuster C2P(nh_ptr);
 
