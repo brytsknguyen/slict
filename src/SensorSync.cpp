@@ -1,25 +1,25 @@
 /**
 * This file is part of slict.
-* 
+*
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
-* 
+*
 * For more information please see <https://britsknguyen.github.io>.
 * or <https://github.com/brytsknguyen/slict>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
-* 
+*
 * slict is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
-* 
+*
 * slict is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
-* 
+*
 * You should have received a copy of the GNU General Public License
 * along with slict.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -36,17 +36,19 @@
 #include <condition_variable>
 
 #include <Eigen/Dense>
-#include <cv_bridge/cv_bridge.h>
+// #include <cv_bridge/cv_bridge.h>
 
-#include "geometry_msgs/PoseStamped.h"
-#include "tf/transform_broadcaster.h"
-#include "tf2_ros/static_transform_broadcaster.h"
-#include "image_transport/image_transport.h"
-#include "slict/FeatureCloud.h"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+// #include "tf/transform_broadcaster.h"
+// #include "tf2_ros/static_transform_broadcaster.h"
+#include "image_transport/image_transport.hpp"
+#include "slict/msg/feature_cloud.hpp"
 
 // Package specials
 // #include "preprocess.hpp"
 #include "utility.h"
+
+typedef slict::msg::FeatureCloud slictFCMsg;
 
 struct CloudPacket
 {
@@ -54,7 +56,7 @@ struct CloudPacket
     double endTime;
 
     CloudXYZITPtr cloud;
-    
+
     CloudPacket(){};
     CloudPacket(double startTime_, double endTime_, CloudXYZITPtr cloud_)
         : startTime(startTime_), endTime(endTime_), cloud(cloud_)
@@ -64,13 +66,13 @@ struct CloudPacket
 class SensorSync
 {
 private:
-        
+
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
     // Subscribers
-    vector<ros::Subscriber> lidar_sub;
-    ros::Subscriber imu_sub;
+    vector<rclcpp::Subscription<RosPc2Msg>::SharedPtr> lidar_sub;
+    rclcpp::Subscription<RosImuMsg>::SharedPtr imu_sub;
 
     mutex lidar_buf_mtx;
     mutex lidar_leftover_buf_mtx;
@@ -78,13 +80,13 @@ private:
 
     deque<deque<CloudPacket>> lidar_buf;
     deque<deque<CloudPacket>> lidar_leftover_buf;
-    deque<sensor_msgs::Imu::ConstPtr> imu_buf;
+    deque<RosImuMsg::ConstSharedPtr> imu_buf;
 
     mutex merged_cloud_buf_mtx;
     deque<CloudPacket> merged_cloud_buf;
 
-    ros::Publisher merged_pc_pub;
-    ros::Publisher data_pub;
+    rclcpp::Publisher<RosPc2Msg>::SharedPtr merged_pc_pub;
+    rclcpp::Publisher<slictFCMsg>::SharedPtr data_pub;
 
     // Lidar extrinsics
     deque<Matrix3d> R_B_L;
@@ -101,7 +103,7 @@ private:
     double cutoff_time = -1;
     double cutoff_time_new = -1;
     double min_range = 0.5;
-    vector<int> ds_rate = {1};
+    vector<int64_t> ds_rate = {1};
     int sweep_len = 1;
 
     thread sync_lidar;
@@ -113,7 +115,7 @@ public:
     // Destructor
     ~SensorSync() {}
 
-    SensorSync(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    SensorSync(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         // Initialize the variables and subsribe/advertise topics here
         Initialize();
@@ -123,28 +125,28 @@ public:
     {
 
         /* #region Lidar --------------------------------------------------------------------------------------------*/
-        
+
         // Read the lidar topic
         vector<string> lidar_topic = {"/os_cloud_node/points"};
-        nh_ptr->getParam("/lidar_topic", lidar_topic);
+        Util::GetParam(nh_ptr, "/lidar_topic", lidar_topic);
 
         Nlidar = lidar_topic.size();
 
         // Read the extrincs of lidars
         vector<double> lidar_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        nh_ptr->getParam("/lidar_extr", lidar_extr);
+        Util::GetParam(nh_ptr, "/lidar_extr", lidar_extr);
 
         ROS_ASSERT_MSG( (lidar_extr.size() / 16) == Nlidar,
                         "Lidar extrinsics not complete: %d < %d (= %d*16)\n",
                          lidar_extr.size(), Nlidar, Nlidar*16);
 
         printf("Received %d lidar(s) with extrinsics: \n", Nlidar);
-        for(int i = 0; i < Nlidar; i++)
+        for(int lidx = 0; lidx < Nlidar; lidx++)
         {
             // Confirm the topics
-            printf("Lidar topic #%02d: %s\n", i, lidar_topic[i].c_str());
+            printf("Lidar topic #%02d: %s\n", lidx, lidar_topic[lidx].c_str());
 
-            Matrix4d extrinsicTf = Matrix<double, 4, 4, RowMajor>(&lidar_extr[i*16]);
+            Matrix4d extrinsicTf = Matrix<double, 4, 4, RowMajor>(&lidar_extr[lidx*16]);
             cout << "extrinsicTf: " << endl;
             cout << extrinsicTf << endl;
 
@@ -154,29 +156,38 @@ public:
             lidar_buf.push_back(deque<CloudPacket>(0));
             lidar_leftover_buf.push_back(deque<CloudPacket>(0));
 
+            const double time_offset = extrinsicTf(3, 2);
+            const int stamp_type = static_cast<int>(extrinsicTf(3, 3));
+
             // Subscribe to the lidar topic
-            lidar_sub.push_back(nh_ptr->subscribe<sensor_msgs::PointCloud2>
-                                            (lidar_topic[i], 100,
-                                             boost::bind(&SensorSync::PcHandler, this,
-                                                         _1, i, extrinsicTf(3, 2), (int)extrinsicTf(3, 3))));
+            lidar_sub.push_back(
+                nh_ptr->create_subscription<RosPc2Msg>(
+                    lidar_topic[lidx],
+                    rclcpp::QoS(100),
+                    [this, lidx, time_offset, stamp_type](RosPc2Msg::ConstSharedPtr msg)
+                    {
+                        this->PcHandler(msg, lidx, time_offset, stamp_type);
+                    }
+                )
+            );
         }
 
-        nh_ptr->getParam("/min_range", min_range);
+        Util::GetParam(nh_ptr, "/min_range", min_range);
         printf("Lidar minimum range: %f\n", min_range);
 
-        nh_ptr->getParam("/ds_rate", ds_rate);
+        Util::GetParam(nh_ptr, "/ds_rate", ds_rate);
         printf("Down samping rate: ");
         for(auto rate : ds_rate)
             printf("%d ", rate);
         cout << endl;
 
-        nh_ptr->getParam("/sweep_len", sweep_len);
+        Util::GetParam(nh_ptr, "/sweep_len", sweep_len);
         printf("Sweep len: %d\n", sweep_len);
 
         // Advertise lidar topic
         string merged_lidar_topic;
-        nh_ptr->getParam("/merged_lidar_topic", merged_lidar_topic);
-        merged_pc_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>(merged_lidar_topic, 100);
+        Util::GetParam(nh_ptr, "/merged_lidar_topic", merged_lidar_topic);
+        merged_pc_pub = nh_ptr->create_publisher<RosPc2Msg>(merged_lidar_topic, 100);
 
         /* #endregion Lidar -----------------------------------------------------------------------------------------*/
 
@@ -185,14 +196,14 @@ public:
 
         // Read the IMU topic
         string imu_topic = "/imu_vn_100/imu";
-        nh_ptr->getParam("/imu_topic", imu_topic);
+        Util::GetParam(nh_ptr, "/imu_topic", imu_topic);
 
         // Get the scale factor
-        nh_ptr->getParam("/acce_scale", acce_scale);
+        Util::GetParam(nh_ptr, "/acce_scale", acce_scale);
 
         // Read the extrincs of lidars
         vector<double> imu_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        nh_ptr->getParam("/imu_extr", imu_extr);
+        Util::GetParam(nh_ptr, "/imu_extr", imu_extr);
 
         // Confirm the topic(s)
         printf("IMU topic: %s\n", imu_topic.c_str());
@@ -205,23 +216,23 @@ public:
         t_B_I = extrinsicTf.block<3, 1>(0, 3);
 
         // Subscribe to the IMU topic
-        imu_sub = nh_ptr->subscribe<sensor_msgs::Imu>(imu_topic, 10000, &SensorSync::ImuHandler, this);
+        imu_sub = nh_ptr->create_subscription<RosImuMsg>(imu_topic, 10000, std::bind(&SensorSync::ImuHandler, this, std::placeholders::_1));
 
         /* #endregion IMU -------------------------------------------------------------------------------------------*/
 
-        data_pub = nh_ptr->advertise<slict::FeatureCloud>("/sensors_sync", 100);
+        data_pub = nh_ptr->create_publisher<slictFCMsg>("/sensors_sync", 100);
 
         // Create the synchronizing threads
         sync_lidar = thread(&SensorSync::SyncLidar, this);
         sync_data  = thread(&SensorSync::SyncData, this);
     }
 
-    void PcHandler(const sensor_msgs::PointCloud2::ConstPtr &msg, int idx, double time_offset, int stamp_type)
+    void PcHandler(const RosPc2Msg::ConstSharedPtr &msg, int idx, double time_offset, int stamp_type)
     {
         if (idx == 0)
         {
             // Lump the pointclouds together
-            typedef sensor_msgs::PointCloud2::ConstPtr RosCloudPtr;
+            typedef RosPc2Msg::ConstPtr RosCloudPtr;
             static deque<RosCloudPtr> cloudBuf;
             cloudBuf.push_back(msg);
 
@@ -243,12 +254,12 @@ public:
                     // Calculate the proper time stamps at the two ends
                     if (stamp_type == 1)
                     {
-                        cloud_start_time = cloudMsg->header.stamp.toSec() + time_offset;
+                        cloud_start_time = rclcpp::Time(cloudMsg->header.stamp).seconds() + time_offset;
                         cloud_end_time   = cloud_start_time + sweep_dur;
                     }
                     else
                     {
-                        cloud_end_time   = cloudMsg->header.stamp.toSec() + time_offset;
+                        cloud_end_time   = rclcpp::Time(cloudMsg->header.stamp).seconds() + time_offset;
                         cloud_start_time = cloud_end_time - sweep_dur;
                     }
 
@@ -281,7 +292,7 @@ public:
                 lidar_buf_mtx.lock();
                 lidar_buf[idx].push_back(CloudPacket(startTime, endTime, cloud_inB));
                 lidar_buf_mtx.unlock();
-                
+
                 cloudBuf.clear();
             }
         }
@@ -290,12 +301,12 @@ public:
             double startTime, endTime;
             if (stamp_type == 1)
             {
-                startTime = msg->header.stamp.toSec() + time_offset;
+                startTime = rclcpp::Time(msg->header.stamp).seconds() + time_offset;
                 endTime   = startTime + 0.1;
             }
             else
             {
-                endTime   = msg->header.stamp.toSec() + time_offset;
+                endTime   = rclcpp::Time(msg->header.stamp).seconds() + time_offset;
                 startTime = endTime - 0.1;
             }
 
@@ -325,7 +336,7 @@ public:
 
                 cloud_inB->push_back(point_inB);
             }
-            
+
             lidar_buf_mtx.lock();
             lidar_buf[idx].push_back(CloudPacket(startTime, endTime, cloud_inB));
             lidar_buf_mtx.unlock();
@@ -334,14 +345,14 @@ public:
             return;
     }
 
-    void ImuHandler(const sensor_msgs::Imu::ConstPtr &msg)
+    void ImuHandler(const RosImuMsg::ConstSharedPtr &msg)
     {
         imu_buf_mtx.lock();
 
         if (acce_scale != 1.0)
         {
-            sensor_msgs::Imu::Ptr scaled_imu(new sensor_msgs::Imu());
-            
+            RosImuMsg::Ptr scaled_imu(new RosImuMsg());
+
             *scaled_imu = *msg;
             scaled_imu->linear_acceleration.x *= acce_scale;
             scaled_imu->linear_acceleration.y *= acce_scale;
@@ -354,10 +365,10 @@ public:
 
         imu_buf_mtx.unlock();
     }
-    
+
     void SyncLidar()
     {
-        while(ros::ok)
+        while(rclcpp::ok())
         {
             // Loop if the secondary buffers don't over lap
             if(!LidarBufReady())
@@ -390,7 +401,7 @@ public:
                 printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
                        lidar_buf[0].front().startTime,
                        lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
-                       lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());    
+                       lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());
             }
 
             if (lidar_buf.size() > 1)
@@ -427,7 +438,7 @@ public:
                 return false;
             }
         }
-        
+
         // If any secondary buffer's end still has not passed the first endtime in the primary buffer, loop lah!
         for(int i = 1; i < Nlidar; i++)
         {
@@ -437,7 +448,7 @@ public:
             }
         }
 
-        return true;    
+        return true;
     }
 
     void ExtractLidarPoints(CloudPacket &extracted_points)
@@ -562,12 +573,12 @@ public:
 
     double ImuEndTime()
     {
-        return imu_buf.back()->header.stamp.toSec();
+        return rclcpp::Time(imu_buf.back()->header.stamp).seconds();
     }
 
     double ImuStartTime()
     {
-        return imu_buf.front()->header.stamp.toSec();
+        return rclcpp::Time(imu_buf.front()->header.stamp).seconds();
     }
 
     void SyncData()
@@ -627,20 +638,20 @@ public:
             merged_cloud_buf.pop_front();
             merged_cloud_buf_mtx.unlock();
 
-            slict::FeatureCloud msg;
-            msg.header.stamp    = ros::Time(merged_cloud.startTime);
-            msg.extracted_cloud = Util::publishCloud(merged_pc_pub, *merged_cloud.cloud, ros::Time(merged_cloud.startTime), string("body"));
-            msg.scanStartTime   = merged_cloud.startTime;
-            msg.scanEndTime     = merged_cloud.endTime;
+            slictFCMsg msg;
+            msg.header.stamp    = rclcpp::Time(merged_cloud.startTime);
+            msg.extracted_cloud = Util::publishCloud(merged_pc_pub, *merged_cloud.cloud, rclcpp::Time(merged_cloud.startTime), string("body"));
+            msg.scan_start_time = merged_cloud.startTime;
+            msg.scan_end_time   = merged_cloud.endTime;
 
-            vector<sensor_msgs::Imu> &imu_bundle = msg.imu_msgs;
+            vector<RosImuMsg> &imu_bundle = msg.imu_msgs;
             double imu_start_time = -1, imu_end_time = -1;
             while(!imu_buf.empty())
             {
-                sensor_msgs::Imu imu_sample = *imu_buf.front();
-                imu_sample.header.seq = 0;
+                RosImuMsg imu_sample = *imu_buf.front();
+                // imu_sample.header.seq = 0;
 
-                double imu_stamp = imu_sample.header.stamp.toSec();
+                double imu_stamp = rclcpp::Time(imu_sample.header.stamp).seconds();
 
                 if ( imu_stamp <= merged_cloud.endTime )
                 {
@@ -652,15 +663,15 @@ public:
                     // ASSUMPTION: Data from IMU i is available and has been stored
                     // ROS_ASSERT(!imu_bundle.empty());
                     // ROS_ASSERT_MSG(imu_bundle.back().header.seq == 0,
-                    //                 "seq: %d. i: %d. Sz: %d. ScanEndTime: %f. IMUTime: %f\n",
+                    //                 "seq: %d. i: %d. Sz: %d. scan_end_time: %f. IMUTime: %f\n",
                     //                 imu_bundle.back().header.seq, 0, imu_buf.size(), merged_cloud.endTime, imu_stamp);
 
                     // Linearly interpolating the imu sample
-                    double ta = imu_bundle.back().header.stamp.toSec();
-                    double tb = imu_sample.header.stamp.toSec();
+                    double ta = rclcpp::Time(imu_bundle.back().header.stamp).seconds();
+                    double tb = rclcpp::Time(imu_sample.header.stamp).seconds();
 
                     // ASSUMPTION: IMU is spaced out
-                    ROS_ASSERT( tb - ta > 0 );
+                    assert( tb - ta > 0 );
 
                     Vector3d gyro_ta(imu_bundle.back().angular_velocity.x,
                                      imu_bundle.back().angular_velocity.y,
@@ -673,17 +684,17 @@ public:
                                      imu_bundle.back().linear_acceleration.z);
                     Vector3d acce_tb(imu_sample.linear_acceleration.x,
                                      imu_sample.linear_acceleration.y,
-                                     imu_sample.linear_acceleration.z);   
-                    
+                                     imu_sample.linear_acceleration.z);
+
                     // Make an interpolated sample
                     double t_itp = merged_cloud.endTime;
                     double s = (t_itp - ta)/(tb - ta);
                     Vector3d gyro_itp = (1-s)*gyro_ta + s*gyro_tb;
                     Vector3d acce_itp = (1-s)*acce_ta + s*acce_tb;
-                    
+
                     imu_stamp = t_itp;
-                    imu_sample.header.stamp = ros::Time(t_itp);
-                    imu_sample.header.seq = 0;
+                    imu_sample.header.stamp = rclcpp::Time(t_itp);
+                    // imu_sample.header.seq = 0;
                     imu_sample.angular_velocity.x = gyro_itp(0);
                     imu_sample.angular_velocity.y = gyro_itp(1);
                     imu_sample.angular_velocity.z = gyro_itp(2);
@@ -691,7 +702,7 @@ public:
                     imu_sample.linear_acceleration.y = acce_itp(1);
                     imu_sample.linear_acceleration.z = acce_itp(2);
                 }
-                
+
                 if (imu_stamp >= merged_cloud.startTime && imu_stamp <= merged_cloud.endTime)
                 {
                     imu_bundle.push_back(imu_sample);
@@ -710,23 +721,22 @@ public:
             /* #endregion Probing the key buffers -------------------------------------------------------------------*/
 
             // Publish the synchronized data
-            data_pub.publish(msg);
+            data_pub->publish(msg);
         }
     }
 };
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "sensor_sync");
-    ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    RosNodeHandlePtr nh_ptr = rclcpp::Node::make_shared("sensor_sync");
 
-    ROS_INFO(KGRN "----> Sensor Sync Started." RESET);
+    RINFO(KGRN "----> Sensor Sync Started." RESET);
+    SensorSync SS(nh_ptr);
 
-    SensorSync sensor_sync(nh_ptr);
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(nh_ptr);
+    executor.spin();
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
-    
     return 0;
 }

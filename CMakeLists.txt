@@ -33,6 +33,7 @@ find_package(visualization_msgs REQUIRED)
 
 # ROS wrapped packges
 find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Sophus REQUIRED)
@@ -95,43 +96,11 @@ find_package(Sophus REQUIRED)
 # )
 
 # ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-#   nav_msgs
-#   sensor_msgs
-#   geometry_msgs
-# )
-
-## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
-
-# ###################################
-# ## catkin specific configuration ##
-# ###################################
-# ## The catkin_package macro generates cmake config files for your package
-# ## Declare things to be passed to dependent projects
-# ## INCLUDE_DIRS: uncomment this if your package contains header files
-# ## LIBRARIES: libraries you create in this project that dependent projects also need
-# ## CATKIN_DEPENDS: catkin_packages dependent projects also need
-# ## DEPENDS: system dependencies of this project that dependent projects also need
-# catkin_package(
-#   INCLUDE_DIRS include
-#   CATKIN_DEPENDS
-#   std_msgs
-#   nav_msgs
-#   geometry_msgs
-#   sensor_msgs
-#   message_runtime
-#   message_generation
-# )
-
-###########
-## Build ##
-###########
+# To generate messages
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/FeatureCloud.msg"
+  DEPENDENCIES std_msgs sensor_msgs geometry_msgs builtin_interfaces
+)
 
 # Include directories
 include_directories(
@@ -152,11 +121,33 @@ include_directories(
 # add_dependencies(${PROJECT_NAME}_estimator ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 # target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS})
 # target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
-# # Synchronizer for lidar and IMU
+
+# Synchronizer for lidar and IMU
 # add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
 # add_dependencies(${PROJECT_NAME}_sensorsync ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 # target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS})
 # target_link_libraries(${PROJECT_NAME}_sensorsync ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
+
+add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
+target_include_directories(${PROJECT_NAME}_sensorsync PRIVATE /opt/ros/jazzy/include) # To include sophus for some stupid reason
+ament_target_dependencies(${PROJECT_NAME}_sensorsync
+  rclcpp
+  tf2_ros
+  visualization_msgs
+  sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
+  pcl_conversions
+  image_transport
+  Sophus
+)
+rosidl_target_interfaces(${PROJECT_NAME}_sensorsync ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
+target_link_libraries(${PROJECT_NAME}_sensorsync ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+# Link the executable to the workspace library
+install(TARGETS
+  ${PROJECT_NAME}_sensorsync
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # # IMU prediction
 # add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
 # add_dependencies(${PROJECT_NAME}_imu_odom ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
@@ -168,7 +159,8 @@ include_directories(
 # target_compile_options(${PROJECT_NAME}_relocalization PRIVATE ${OpenMP_CXX_FLAGS})
 # target_link_libraries(${PROJECT_NAME}_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
 
-# Converter of different lidar formats to ouster
+
+# startregion Converter of different lidar formats to ouster ----------------------------------------------------------
 
 # Velodyne
 add_executable(${PROJECT_NAME}_velodyne_to_ouster src/lidar_converters/VelodyneToOuster.cpp)
@@ -284,3 +276,9 @@ install(TARGETS
   ${PROJECT_NAME}_m2dgr_to_ouster
   DESTINATION lib/${PROJECT_NAME}
 )
+
+# closeregion Converter of different lidar formats to ouster ----------------------------------------------------------
+
+
+ament_export_dependencies(rosidl_default_runtime)
+ament_package()
