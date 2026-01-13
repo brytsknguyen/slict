@@ -136,7 +136,7 @@ regularize_imu:     0
 imu_init_time:      0.5
 lite_redeskew:      1
 max_outer_iters:    3
-max_lidar_factor:   8000  # Maximum number of lidar factors
+max_lidar_factor:   2000  # Maximum number of lidar factors
 dj_thres:           0.0
 dx_thres:           0.5
 
