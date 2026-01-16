@@ -74,7 +74,7 @@ The software was developed on the following dependencies. Ubuntu 20.04 and ROS N
 - Sophus
   ```bash
   git clone https://github.com/strasdat/Sophus
-  cd Sophus
+  cd Sophus; git checkout 1.22.10;
   mkdir build && cd build
   cmake .. -DSOPHUS_USE_BASIC_LOGGING=ON
   make -j$(nproc)
