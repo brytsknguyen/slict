@@ -8,12 +8,12 @@
 #include "utility.h"
 
 // Association
-#include "PointToMapAssoc.h"
+// #include "PointToMapAssoc.h"
 
 // Shorthands for ufomap
 namespace ufopred     = ufo::map::predicate;
 using ufoSurfelMap    = ufo::map::SurfelMap;
-using ufoSurfelMapPtr = boost::shared_ptr<ufoSurfelMap>;
+using ufoSurfelMapPtr = std::shared_ptr<ufoSurfelMap>;
 using ufoNode         = ufo::map::NodeBV;
 using ufoSphere       = ufo::geometry::Sphere;
 using ufoPoint3       = ufo::map::Point3;
@@ -23,7 +23,7 @@ class PointToMapAssoc
 public:
 
     // Constructor
-    PointToMapAssoc(ros::NodeHandlePtr &nh_);
+    PointToMapAssoc(RosNodeHandlePtr &nh_);
 
     // Destructor
    ~PointToMapAssoc();
@@ -32,9 +32,9 @@ public:
    void AssociatePointWithMap(PointXYZIT &fRaw, Vector3d &finB, Vector3d &finW, ufoSurfelMap &Map, LidarCoef &coef);
 
 private:
-    
+
     // Node handler
-    ros::NodeHandlePtr nh;
+    RosNodeHandlePtr nh;
 
     // Surfel params
     int    surfel_map_depth;

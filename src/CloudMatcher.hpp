@@ -1,25 +1,25 @@
 /**
 * This file is part of SLICT.
-* 
+*
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
-* 
+*
 * For more information please see <https://britsknguyen.github.io>.
 * or <https://github.com/britsknguyen/SLICT>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
-* 
+*
 * SLICT is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
-* 
+*
 * SLICT is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
-* 
+*
 * You should have received a copy of the GNU General Public License
 * along with SLICT.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -36,20 +36,85 @@
 #include <Eigen/Dense>
 #include <ceres/ceres.h>
 
-#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
-
 #include <pcl/registration/ndt.h>
+#include <pcl/kdtree/kdtree_flann.h>
 
 #include "utility.h"
 
 #include "PoseLocalParameterization.h"
-#include "factor/PointToPlaneDisFactor.h"
+
+#ifndef CLOUDMATCHER_HPP
+#define CLOUDMATCHER_HPP
 
 using namespace std;
 using namespace Eigen;
 using namespace pcl;
+
+#include <eigen3/Eigen/Dense>
+#include <ceres/ceres.h>
+#include "utility.h"
+
+// class PoseLocalParameterization : public ceres::Manifold
+// {
+//     bool Plus(const double *x, const double *delta, double *x_plus_delta) const
+//     {
+//         Eigen::Map<const Eigen::Vector3d> _p(x);
+//         Eigen::Map<const Eigen::Quaterniond> _q(x + 3);
+
+//         Eigen::Map<const Eigen::Vector3d> dp(delta);
+//         Eigen::Quaterniond dq = Util::QExp(Eigen::Map<const Eigen::Vector3d>(delta + 3));
+
+//         Eigen::Map<Eigen::Vector3d> p(x_plus_delta);
+//         Eigen::Map<Eigen::Quaterniond> q(x_plus_delta + 3);
+
+//         p = _p + dp;
+//         q = (_q * dq).normalized();
+
+//         return true;
+//     }
+
+//     virtual bool PlusJacobian(const double *x, double *jacobian) const
+//     {
+//         Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor>> J(jacobian);
+//         J.setZero();
+//         J.topRows<6>().setIdentity();
+
+//         return true;
+//     }
+
+//     bool Minus(const double *y, const double *x, double *y_minus_x) const
+//     {
+//         Eigen::Map<const Eigen::Vector3d> _px(x);
+//         Eigen::Map<const Eigen::Quaterniond> _qx(x + 3);
+
+//         Eigen::Map<const Eigen::Vector3d> _py(y);
+//         Eigen::Map<const Eigen::Quaterniond> _qy(y + 3);
+
+//         Eigen::Map<Matrix<double, 6, 6>> y_minus_x_(y_minus_x);
+
+//         y_minus_x_.block<3, 1>(0, 0) = _py - _px;
+//         y_minus_x_.block<3, 1>(3, 0) = Util::QLog(_qx.inverse()*_qy);
+
+//         return true;
+//     }
+
+//     virtual bool MinusJacobian(const double* x, double* jacobian) const
+//     {
+//         Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::RowMajor>>  J(jacobian);
+//         J.setZero();
+//         J.topRows<6>().setIdentity();
+
+//         return true;
+//     }
+
+//     ///@brief Global size
+//     virtual int AmbientSize() const { return 7; }
+
+//     ///@brief Local size
+//     virtual int TangentSize() const { return 6; }
+// };
 
 struct IOAOptions
 {
@@ -75,11 +140,57 @@ struct IOASummary
     mytf final_tf;
 };
 
-class CloudMatcher
+#ifndef POINTTOPLANDISFACTOR_H
+#define POINTTOPLANDISFACTOR_H
+
+class PointToPlaneFactor : public ceres::SizedCostFunction<1, 7>
 {
+public:
+    PointToPlaneFactor() = delete;
+    PointToPlaneFactor(const Vector3d &point,
+                       const Vector4d &coeff) : point_(point), sqrt_info_static_(1.0)
+    {
+        normal_ << coeff.x(), coeff.y(), coeff.z();
+        offset_ =  coeff.w();
+    }
+    virtual bool Evaluate(double const *const *parameters, double *residuals, double **jacobians) const
+    {
+        Vector3d    Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
+        Quaterniond Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
+
+        double residual = normal_.transpose() * (Qi * point_ + Pi) + offset_;
+
+        residuals[0] = sqrt_info_static_*residual;
+
+        if(jacobians)
+        {
+            Eigen::Map<Eigen::Matrix<double, 1, 7, Eigen::RowMajor>> jacobian_pose(jacobians[0]);
+            jacobian_pose.setZero();
+            jacobian_pose.block<1, 3>(0, 0) =  normal_.transpose();
+            jacobian_pose.block<1, 3>(0, 3) = -normal_.transpose()
+                                               *Qi.toRotationMatrix()
+                                               *Util::skewSymmetric(point_);
+            jacobian_pose = sqrt_info_static_*jacobian_pose;
+        }
+
+        return true;
+    }
+    // void Check(double **parameters);
 
 private:
-    
+    Eigen::Vector3d point_;
+    Eigen::Vector3d normal_;
+    double offset_;
+
+    double sqrt_info_static_;
+};
+
+#endif
+
+class CloudMatcher
+{
+private:
+
     double minMatchSqDis = 1.0;
     double minPlaneDis   = 0.05;
 
@@ -105,13 +216,13 @@ public:
         TicToc tt_solve;
 
         double surf_assoc_time = 0, edge_assoc_time = 0;
-        
+
         // Get the input parameters
         mytf tf_Ref_Src_init = ioaOpt.init_tf;
         int &maxF2MOptIters = ioaOpt.max_iterations;
 
         // Initialize the summary
-        bool   &converged = ioaSum.converged; 
+        bool   &converged = ioaSum.converged;
         int    &actualItr = ioaSum.iterations;
         double &JM        = ioaSum.JM;
         double &J0        = ioaSum.J0;
@@ -130,9 +241,12 @@ public:
         deque<Vector4d> srcSurfCoeff;
         int totalSurfF2M = 0, totalEdgeF2M = 0;
 
+        pcl::KdTreeFLANN<PointXYZI> kdTreeSurfFromMap;
+        kdTreeSurfFromMap.setInputCloud(refSurfMap);
+
         double *PARAM_POSE;
         PARAM_POSE = new double[7];
-        
+
         int iter = -1;
         static int opt_num = -1; opt_num++;
         while(iter < maxF2MOptIters)
@@ -144,12 +258,12 @@ public:
             tt_assoc.Tic();
 
             // Build the map
-            CalSurfF2MCoeff(refSurfMap, srcSurfCloud, tf_Ref_Src_init, srcSurfCoord, srcSurfCoeff, totalSurfF2M, surf_assoc_time);
+            CalSurfF2MCoeff(kdTreeSurfFromMap, refSurfMap, srcSurfCloud, tf_Ref_Src_init, srcSurfCoord, srcSurfCoeff, totalSurfF2M, surf_assoc_time);
 
             tt_assoc.Toc();
 
             /* #endregion Find associations -----------------------------------------------------------------------*/
-        
+
 
             /* #region Solve the problem --------------------------------------------------------------------------*/
 
@@ -174,7 +288,7 @@ public:
             options.num_threads = MAX_THREADS;
 
             // Add parameter blocks
-            ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
+            ceres::Manifold *local_parameterization = new PoseLocalParameterization();
             problem.AddParameterBlock(PARAM_POSE, 7, local_parameterization);
 
             // Add factors
@@ -186,7 +300,7 @@ public:
             vector<ceres::internal::ResidualBlock *> res_ids_proj_surf;
             for (int j = 0; j < Nsurf; j++)
             {
-                Point2PlaneDisFactor *f = new Point2PlaneDisFactor(srcSurfCoord[j], srcSurfCoeff[j]);
+                PointToPlaneFactor *f = new PointToPlaneFactor(srcSurfCoord[j], srcSurfCoeff[j]);
                 ceres::internal::ResidualBlock *res_id = problem.AddResidualBlock(f, huber_loss_function, PARAM_POSE);
                 res_ids_proj_surf.push_back(res_id);
             }
@@ -214,10 +328,10 @@ public:
             double t_slv = tt_solve.Toc();
 
             /* #endregion Solve the problem -----------------------------------------------------------------------*/
-        
+
 
             /* #region Report the estimate ------------------------------------------------------------------------*/
-            
+
             Vector3d ypr_init = Util::Quat2YPR(tf_Ref_Src_init.rot);
             Vector3d ypr_last = Util::Quat2YPR(tf_Ref_Src_iao.rot);
             Vector3d pos_init = tf_Ref_Src_init.pos;
@@ -274,224 +388,9 @@ public:
                 ioaSumPrev.JK = JK;
                 ioaSumPrev.JKavr = JKavr;
             }
-            
-            /* #endregion Report the estimate ---------------------------------------------------------------------*/ 
-        
 
-            // Quit early if change is very small
-            if (DJ < ioaOpt.DJ_end)
-            {
-                converged = true;
-                break;
-            }
-        }
+            /* #endregion Report the estimate ---------------------------------------------------------------------*/
 
-        // Add a line break
-        if (ioaOpt.show_report)
-            printf("\n");
-
-        ioaSum.process_time = tt_proc_time.Toc();
-    }
-
-    void IterateAssociateOptimize(IOAOptions &ioaOpt, IOASummary &ioaSum, const CloudXYZIPtr &refSurfMap, const CloudXYZIPtr &refEdgeMap,
-                                  const CloudXYZIPtr &srcSurfCloud, const CloudXYZIPtr &srcEdgeCloud)
-    {
-        TicToc tt_proc_time;
-        TicToc tt_assoc;
-        TicToc tt_solve;
-
-        double surf_assoc_time = 0, edge_assoc_time = 0;
-        
-        // Get the input parameters
-        mytf tf_Ref_Src_init = ioaOpt.init_tf;
-        int &maxF2MOptIters = ioaOpt.max_iterations;
-
-        // Initialize the summary
-        bool   &converged = ioaSum.converged; 
-        int    &actualItr = ioaSum.iterations;
-        double &JM        = ioaSum.JM;
-        double &J0        = ioaSum.J0;
-        double &JK        = ioaSum.JK;
-        double &JKavr     = ioaSum.JKavr;
-        double &DJ        = ioaSum.DJ;
-        mytf &tf_Ref_Src_iao = ioaSum.final_tf;
-
-        JM = 0; J0 = 0; JK = 0;
-        tf_Ref_Src_iao = tf_Ref_Src_init;
-
-        // Back up the transform
-        IOASummary ioaSumPrev = ioaSum;
-
-        deque<Vector3d> srcSurfCoord, srcEdgeCoord;
-        deque<Vector4d> srcSurfCoeff, srcEdgeCoeff;
-        int totalSurfF2M = 0, totalEdgeF2M = 0;
-
-        double *PARAM_POSE;
-        PARAM_POSE = new double[7];
-        
-        int iter = -1;
-        static int opt_num = -1; opt_num++;
-        while(iter < maxF2MOptIters)
-        {
-            iter++;
-
-            /* #region Find associations --------------------------------------------------------------------------*/
-
-            tt_assoc.Tic();
-
-            // Build the map
-            CalSurfF2MCoeff(refSurfMap, srcSurfCloud, tf_Ref_Src_init, srcSurfCoord, srcSurfCoeff, totalSurfF2M, surf_assoc_time);
-            CalEdgeF2MCoeff(refEdgeMap, srcEdgeCloud, tf_Ref_Src_init, srcEdgeCoord, srcEdgeCoeff, totalEdgeF2M, edge_assoc_time);
-
-            tt_assoc.Toc();
-
-            /* #endregion Find associations -----------------------------------------------------------------------*/
-        
-
-            /* #region Solve the problem --------------------------------------------------------------------------*/
-
-            tt_solve.Tic();
-
-            // Create variable & initialize
-            PARAM_POSE[0] = tf_Ref_Src_init.pos(0);
-            PARAM_POSE[1] = tf_Ref_Src_init.pos(1);
-            PARAM_POSE[2] = tf_Ref_Src_init.pos(2);
-            PARAM_POSE[3] = tf_Ref_Src_init.rot.x();
-            PARAM_POSE[4] = tf_Ref_Src_init.rot.y();
-            PARAM_POSE[5] = tf_Ref_Src_init.rot.z();
-            PARAM_POSE[6] = tf_Ref_Src_init.rot.w();
-
-            // Create ceres problem and settings
-            ceres::Problem problem;
-            // Settings
-            ceres::Solver::Options options;
-            options.linear_solver_type = ceres::DENSE_SCHUR;
-            options.trust_region_strategy_type = ioaOpt.trustRegType;
-            options.dense_linear_algebra_library_type = ioaOpt.linAlgbLib;
-            options.num_threads = MAX_THREADS;
-
-            // Add parameter blocks
-            ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
-            problem.AddParameterBlock(PARAM_POSE, 7, local_parameterization);
-
-            // Add factors
-            ceres::LossFunction *huber_loss_function = new ceres::HuberLoss(1.0);
-
-            // Surface factors
-            int Nsurf = srcSurfCoord.size();
-            double surf_init_cost = 0, surf_final_cost = -1;
-            vector<ceres::internal::ResidualBlock *> res_ids_proj_surf;
-            for (int j = 0; j < Nsurf; j++)
-            {
-                Point2PlaneDisFactor *f = new Point2PlaneDisFactor(srcSurfCoord[j], srcSurfCoeff[j]);
-                ceres::internal::ResidualBlock *res_id = problem.AddResidualBlock(f, huber_loss_function, PARAM_POSE);
-                res_ids_proj_surf.push_back(res_id);
-            }
-
-            // Edge factors
-            int Nedge = srcEdgeCoord.size();
-            double edge_init_cost = 0, edge_final_cost = -1;
-            vector<ceres::internal::ResidualBlock *> res_ids_proj_edge;
-            for (int j = 0; j < Nedge; j++)
-            {
-                Point2PlaneDisFactor *f = new Point2PlaneDisFactor(srcEdgeCoord[j], srcEdgeCoeff[j]);
-                ceres::internal::ResidualBlock *res_id = problem.AddResidualBlock(f, huber_loss_function, PARAM_POSE);
-                res_ids_proj_edge.push_back(res_id);
-            }
-            
-            // Calculate the initial cost
-            ceres::Problem::EvaluateOptions e_option;
-            e_option.num_threads = MAX_THREADS;
-
-            Util::ComputeCeresCost(res_ids_proj_surf, surf_init_cost, problem);
-            Util::ComputeCeresCost(res_ids_proj_edge, edge_init_cost, problem);
-
-            // Solve the problem
-            ceres::Solver::Summary summary;
-            ceres::Solve(options, &problem, &summary);
-
-            Util::ComputeCeresCost(res_ids_proj_surf, surf_final_cost, problem);
-            Util::ComputeCeresCost(res_ids_proj_edge, edge_final_cost, problem);
-
-            // Unload the estimate to the states
-            Vector3d Ps(PARAM_POSE[0], PARAM_POSE[1], PARAM_POSE[2]);
-            Quaternd Qs(PARAM_POSE[6], PARAM_POSE[3], PARAM_POSE[4], PARAM_POSE[5]);
-
-            tf_Ref_Src_iao = mytf(Qs, Ps);
-
-            double t_slv = tt_solve.Toc();
-
-            /* #endregion Solve the problem -----------------------------------------------------------------------*/
-        
-
-            /* #region Report the estimate ------------------------------------------------------------------------*/
-            
-            Vector3d ypr_init = Util::Quat2YPR(tf_Ref_Src_init.rot);
-            Vector3d ypr_last = Util::Quat2YPR(tf_Ref_Src_iao.rot);
-            Vector3d pos_init = tf_Ref_Src_init.pos;
-            Vector3d pos_last = tf_Ref_Src_iao.pos;
-
-            int total_surf_features = srcSurfCloud->size();
-            int total_edge_features = srcEdgeCloud->size();
-
-            int total_surf_factors = res_ids_proj_surf.size();
-            int total_edge_factors = res_ids_proj_edge.size();
-
-            double JKavr_surf = (surf_final_cost == 0 || total_surf_factors == 0)
-                                ? 0 : (surf_final_cost / total_surf_factors) * ((double)(total_surf_features) / total_surf_factors);
-            double JKavr_edge = (edge_final_cost == 0 || total_edge_factors == 0)
-                                ? 0 : (edge_final_cost / total_edge_factors) * ((double)(total_edge_features) * 2 / total_edge_factors);
-
-            double DJ = summary.initial_cost - summary.final_cost;
-
-            JM = (iter == 0) ? summary.initial_cost : JM;
-            J0 = summary.initial_cost;
-            JK = summary.final_cost;
-            JKavr = JKavr_surf + JKavr_edge;
-
-            // Reload the initial guess with the optimized for the next iteration
-            actualItr = iter;
-            tf_Ref_Src_init = tf_Ref_Src_iao;
-
-            if (ioaOpt.show_report)
-            {
-                printf(KBLU
-                    "%s. Try: %2d. Itr: %2d. "
-                    "t_assoc: %3.0f (%3.0f, %3.0f). t_slv: %3.0f.\n"
-                    "Pinit: %7.2f. %7.2f. %7.2f. YPR: %4.0f. %4.0f. %4.0f.\n"
-                    "Plast: %7.2f. %7.2f. %7.2f. YPR: %4.0f. %4.0f. %4.0f.\n"
-                    "J0: %9.3f. Surf: %9.3f. Edge: %9.3f. Factors: Surf: %3d. Edge: %3d\n"
-                    "JK: %9.3f. Surf: %9.3f. Edge: %9.3f. Javrage: %f\n"
-                    "DJ: %9.3f. Surf: %9.3f. Edge: %9.3f. %s\n"
-                    RESET,
-                    ioaOpt.text.c_str(), iter, static_cast<int>(summary.iterations.size()),
-                    tt_assoc.GetLastStop(),
-                    surf_assoc_time, edge_assoc_time,
-                    tt_solve.GetLastStop(),
-                    pos_init.x(), pos_init.y(), pos_init.z(),
-                    ypr_init.x(), ypr_init.y(), ypr_init.z(),
-                    pos_last.x(), pos_last.y(), pos_last.z(),
-                    ypr_last.x(), ypr_last.y(), ypr_last.z(),
-                    summary.initial_cost, surf_init_cost, edge_init_cost,
-                    res_ids_proj_surf.size(), res_ids_proj_edge.size(),
-                    summary.final_cost, surf_final_cost, edge_final_cost,
-                    JKavr,
-                    summary.initial_cost - summary.final_cost,
-                    surf_init_cost - surf_final_cost,
-                    edge_init_cost - edge_final_cost,
-                    DJ < 0.001 ? "CONVERGED!" : "");
-            }
-
-            if (iter == 0)
-            {
-                ioaSumPrev.JM = JM;
-                ioaSumPrev.J0 = J0;
-                ioaSumPrev.JK = JK;
-                ioaSumPrev.JKavr = JKavr;
-            }
-            
-            /* #endregion Report the estimate ---------------------------------------------------------------------*/ 
-        
 
             // Quit early if change is very small
             if (DJ < ioaOpt.DJ_end)
@@ -522,7 +421,7 @@ public:
         icp.setTransformationEpsilon(1e-6);
         icp.setEuclideanFitnessEpsilon(1e-6);
         icp.setRANSACIterations(0);
-        
+
         icp.setInputSource(src_pcl);
         icp.setInputTarget(ref_pcl);
 
@@ -562,11 +461,11 @@ public:
 
         return icp_passed;
 
-        /* #endregion Calculate the relative pose constraint ------------------------------------------------------------*/        
+        /* #endregion Calculate the relative pose constraint ------------------------------------------------------------*/
 
     }
 
-    void CalSurfF2MCoeff(const CloudXYZIPtr &refSurfMap, const CloudXYZIPtr &srcSurfMap,
+    void CalSurfF2MCoeff(const pcl::KdTreeFLANN<PointXYZI> &kdTreeSurfFromMap, const CloudXYZIPtr &refSurfMap, const CloudXYZIPtr &srcSurfMap,
                          mytf tf_Ref_Src, deque<Vector3d> &srcSurfCoord, deque<Vector4d> &srcSurfCoeff,
                          int &totalSurfF2M, double &time_surf_assoc)
     {
@@ -576,16 +475,13 @@ public:
         {
             int pointsCount = srcSurfMap->points.size();
             deque<LidarCoef> CloudCoefTemp(pointsCount);
-            
-            pcl::KdTreeFLANN<PointXYZI> kdTreeSurfFromMap; 
-            kdTreeSurfFromMap.setInputCloud(refSurfMap);
 
             #pragma omp parallel for num_threads(MAX_THREADS)
             for (int i = 0; i < pointsCount; i++)
             {
                 PointXYZI srcPointInFsrc = srcSurfMap->points[i];
                 PointXYZI srcPointInFref = Util::transform_point(tf_Ref_Src, srcPointInFsrc);
-                
+
                 CloudCoefTemp[i].n = Vector4d(0, 0, 0, 0);
                 CloudCoefTemp[i].t = -1;
 
@@ -664,11 +560,11 @@ public:
                     }
                 }
             }
-            
+
             // Copy the coefficients to the buffer
             srcSurfCoord.clear();
             srcSurfCoeff.clear();
-            
+
             for(auto &coef : CloudCoefTemp)
             {
                 if (coef.t >= 0)
@@ -710,7 +606,7 @@ public:
         // mat_A1.setZero();
         // mat_D1.setZero();
         // mat_V1.setZero();
-        
+
         // if (refEdgeMap->size() > 5)
         // {
         //     pcl::KdTreeFLANN<PointXYZI> kdTreeEdgeFromMap;
@@ -830,3 +726,5 @@ public:
     }
 
 };
+
+#endif CLOUDMATCHER_HPP

@@ -27,14 +27,14 @@
 
 #include "GaussianProcess.hpp"
 // Shorthands
-typedef sensor_msgs::PointCloud2::ConstPtr rosCloudMsgPtr;
-typedef sensor_msgs::PointCloud2 rosCloudMsg;
+typedef RosPc2Msg::ConstPtr rosCloudMsgPtr;
+typedef RosPc2Msg rosCloudMsg;
 typedef Sophus::SO3d SO3d;
 
 // Shorthands for ufomap
 namespace ufopred = ufo::map::predicate;
 using ufoSurfelMap = ufo::map::SurfelMap;
-using ufoSurfelMapPtr = boost::shared_ptr<ufoSurfelMap>;
+using ufoSurfelMapPtr = std::shared_ptr<ufoSurfelMap>;
 using ufoNode = ufo::map::NodeBV;
 using ufoSphere = ufo::geometry::Sphere;
 using ufoPoint3 = ufo::map::Point3;
@@ -43,7 +43,7 @@ class LITELOAM
 {
 
 private:
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
     // Subscriber
     ros::Subscriber lidarCloudSub;
@@ -71,7 +71,7 @@ private:
 
     // Initial pose (only a single variable)
     mytf initPose;
-    
+
     // The id of the loam instance
     int liteloam_id;
 
@@ -90,7 +90,7 @@ public:
     }
 
     LITELOAM(const CloudXYZIPtr &priorMap, const KdFLANNPtr &kdTreeMap,
-             const mytf &initPose, int id, const ros::NodeHandlePtr &nh_ptr)
+             const mytf &initPose, int id, const RosNodeHandlePtr &nh_ptr)
         : priorMap(priorMap), kdTreeMap(kdTreeMap),
           initPose(initPose), liteloam_id(id), nh_ptr(nh_ptr)
     {
@@ -168,12 +168,12 @@ public:
             if(liteloam_id == 0)
                 ROS_INFO("liteloam_id %d. Start time: %f. Running Time: %f.", liteloam_id, startTime, timeSinceStart());
         }
-        
+
         if(liteloam_id == 0)
             ROS_INFO(KRED "liteloam_id %d exits." RESET, liteloam_id);
     }
 
-    void PCHandler(const sensor_msgs::PointCloud2ConstPtr &msg)
+    void PCHandler(const RosPc2MsgConstPtr &msg)
     {
         std::lock_guard<std::mutex> lock(buffer_mutex);
 
@@ -193,7 +193,7 @@ public:
         ROS_ASSERT_MSG(cloudRaw->size() == cloudInB->size(),
                        "cloudRaw: %d. cloudInB: %d", cloudRaw->size(),
                        cloudInB->size());
-        
+
         int knnSize = 6;
         double minKnnSqDis = 0.5*0.5;
         double min_planarity = 0.2, max_plane_dis = 0.3;
@@ -287,8 +287,8 @@ class Relocalization
 
 private:
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
-    
+    RosNodeHandlePtr nh_ptr;
+
     // Subcriber of lidar pointcloud
     ros::Subscriber lidarCloudSub;
 
@@ -310,7 +310,7 @@ public:
     // Destructor
     ~Relocalization() {}
 
-    Relocalization(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    Relocalization(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         // Initialize the variables and subsribe/advertise topics here
         Initialize();
@@ -339,20 +339,20 @@ public:
                     {
                         ROS_INFO("[Relocalization] LITELOAM %d exceeded 10 sec and is not working. Restarting...",
                                 loam->getID());
-                                            
+
                         loam->stop();
                     }
                     else if(loam->loamConverged())
                     {
-                        // Do something to begin relocalization 
+                        // Do something to begin relocalization
                     }
                 }
             }
-            
+
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
-    
+
     void Initialize()
     {
         // ULOC pose subcriber
@@ -424,7 +424,7 @@ int main(int argc, char **argv)
 {
     ros::init(argc, argv, "relocalization");
     ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    RosNodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
     ROS_INFO(KGRN "----> Relocalization Started." RESET);
 

@@ -128,13 +128,13 @@ public:
 
         // Read the lidar topic
         vector<string> lidar_topic = {"/os_cloud_node/points"};
-        Util::GetParam(nh_ptr, "/lidar_topic", lidar_topic);
+        Util::GetParam(nh_ptr, "lidar_topic", lidar_topic);
 
         Nlidar = lidar_topic.size();
 
         // Read the extrincs of lidars
         vector<double> lidar_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        Util::GetParam(nh_ptr, "/lidar_extr", lidar_extr);
+        Util::GetParam(nh_ptr, "lidar_extr", lidar_extr);
 
         ROS_ASSERT_MSG( (lidar_extr.size() / 16) == Nlidar,
                         "Lidar extrinsics not complete: %d < %d (= %d*16)\n",
@@ -172,21 +172,21 @@ public:
             );
         }
 
-        Util::GetParam(nh_ptr, "/min_range", min_range);
+        Util::GetParam(nh_ptr, "min_range", min_range);
         printf("Lidar minimum range: %f\n", min_range);
 
-        Util::GetParam(nh_ptr, "/ds_rate", ds_rate);
-        printf("Down samping rate: ");
+        Util::GetParam(nh_ptr, "ds_rate", ds_rate);
+        printf("Downsamping rate: ");
         for(auto rate : ds_rate)
             printf("%d ", rate);
         cout << endl;
 
-        Util::GetParam(nh_ptr, "/sweep_len", sweep_len);
+        Util::GetParam(nh_ptr, "sweep_len", sweep_len);
         printf("Sweep len: %d\n", sweep_len);
 
         // Advertise lidar topic
         string merged_lidar_topic;
-        Util::GetParam(nh_ptr, "/merged_lidar_topic", merged_lidar_topic);
+        Util::GetParam(nh_ptr, "merged_lidar_topic", merged_lidar_topic);
         merged_pc_pub = nh_ptr->create_publisher<RosPc2Msg>(merged_lidar_topic, 100);
 
         /* #endregion Lidar -----------------------------------------------------------------------------------------*/
@@ -196,14 +196,14 @@ public:
 
         // Read the IMU topic
         string imu_topic = "/imu_vn_100/imu";
-        Util::GetParam(nh_ptr, "/imu_topic", imu_topic);
+        Util::GetParam(nh_ptr, "imu_topic", imu_topic);
 
         // Get the scale factor
-        Util::GetParam(nh_ptr, "/acce_scale", acce_scale);
+        Util::GetParam(nh_ptr, "acce_scale", acce_scale);
 
         // Read the extrincs of lidars
         vector<double> imu_extr = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        Util::GetParam(nh_ptr, "/imu_extr", imu_extr);
+        Util::GetParam(nh_ptr, "imu_extr", imu_extr);
 
         // Confirm the topic(s)
         printf("IMU topic: %s\n", imu_topic.c_str());
@@ -252,14 +252,15 @@ public:
                     double sweep_dur_err = fabs(sweep_dur - 0.1);
                     // ROS_ASSERT_MSG(sweep_dur_err < 5e-3, "Sweep length %f not exactly 0.1s.\n", sweep_dur, sweep_dur_err);
                     // Calculate the proper time stamps at the two ends
+
                     if (stamp_type == 1)
                     {
-                        cloud_start_time = rclcpp::Time(cloudMsg->header.stamp).seconds() + time_offset;
+                        cloud_start_time = Util::toDouble(cloudMsg->header.stamp) + time_offset;
                         cloud_end_time   = cloud_start_time + sweep_dur;
                     }
                     else
                     {
-                        cloud_end_time   = rclcpp::Time(cloudMsg->header.stamp).seconds() + time_offset;
+                        cloud_end_time   = Util::toDouble(cloudMsg->header.stamp) + time_offset;
                         cloud_start_time = cloud_end_time - sweep_dur;
                     }
 
@@ -283,7 +284,7 @@ public:
                         point_inB.y = p_inL(1);
                         point_inB.z = p_inL(2);
                         point_inB.intensity = point_inL.intensity;
-                        point_inB.t = point_inL.t / 1e9 + cloud_start_time;
+                        point_inB.t = point_inL.t / 1.0e9 + cloud_start_time;
 
                         cloud_inB->push_back(point_inB);
                     }
@@ -301,12 +302,12 @@ public:
             double startTime, endTime;
             if (stamp_type == 1)
             {
-                startTime = rclcpp::Time(msg->header.stamp).seconds() + time_offset;
+                startTime = Util::toDouble(msg->header.stamp) + time_offset;
                 endTime   = startTime + 0.1;
             }
             else
             {
-                endTime   = rclcpp::Time(msg->header.stamp).seconds() + time_offset;
+                endTime   = Util::toDouble(msg->header.stamp) + time_offset;
                 startTime = endTime - 0.1;
             }
 
@@ -485,13 +486,14 @@ public:
 
                 int one_in_n = ds_rate[i];
                 static int ds_count = -1;
-
+// yolos("lidx: %d, div: %d, points: %d. Time: %f, %f", i, one_in_n, front_cloud.cloud->points.size(), front_cloud.cloud->points.front().t, front_cloud.cloud->points.back().t);
                 // Copy the points into the extracted pointcloud or the leftover
                 for( auto &point : front_cloud.cloud->points )
                 {
                     ds_count++; if (ds_count % one_in_n != 0) continue; // Skip one every
 
                     double point_time = point.t;
+// yolos("lidx: %d, div: %d, points: %d. Time: %f, %f. Point time: %f", i, one_in_n, front_cloud.cloud->points.size(), front_cloud.cloud->points.front().t, front_cloud.cloud->points.back().t, point_time);
 
                     if (point_time >= cutoff_time && point_time <= cutoff_time_new)
                     {
@@ -552,6 +554,7 @@ public:
 
                 if (i == 0)
                     break;
+
             }
 
             if (leftover_cloud.cloud->size() > 0)
@@ -564,7 +567,7 @@ public:
         extracted_points.cloud = CloudXYZITPtr(new CloudXYZIT());
         for(int i = 0; i < Nlidar; i++)
             *extracted_points.cloud += *extracted_clouds[i];
-    }
+        }
 
     bool ImuEmpty()
     {
@@ -573,12 +576,12 @@ public:
 
     double ImuEndTime()
     {
-        return rclcpp::Time(imu_buf.back()->header.stamp).seconds();
+        return Util::toDouble(imu_buf.back()->header.stamp);
     }
 
     double ImuStartTime()
     {
-        return rclcpp::Time(imu_buf.front()->header.stamp).seconds();
+        return Util::toDouble(imu_buf.front()->header.stamp);
     }
 
     void SyncData()
@@ -639,8 +642,8 @@ public:
             merged_cloud_buf_mtx.unlock();
 
             slictFCMsg msg;
-            msg.header.stamp    = rclcpp::Time(merged_cloud.startTime);
-            msg.extracted_cloud = Util::publishCloud(merged_pc_pub, *merged_cloud.cloud, rclcpp::Time(merged_cloud.startTime), string("body"));
+            msg.header.stamp    = Util::toRosTime(merged_cloud.startTime);
+            msg.extracted_cloud = Util::publishCloud(merged_pc_pub, *merged_cloud.cloud, Util::toRosTime(merged_cloud.startTime), string("body"));
             msg.scan_start_time = merged_cloud.startTime;
             msg.scan_end_time   = merged_cloud.endTime;
 
@@ -651,7 +654,7 @@ public:
                 RosImuMsg imu_sample = *imu_buf.front();
                 // imu_sample.header.seq = 0;
 
-                double imu_stamp = rclcpp::Time(imu_sample.header.stamp).seconds();
+                double imu_stamp = Util::toDouble(imu_sample.header.stamp);
 
                 if ( imu_stamp <= merged_cloud.endTime )
                 {
@@ -667,8 +670,8 @@ public:
                     //                 imu_bundle.back().header.seq, 0, imu_buf.size(), merged_cloud.endTime, imu_stamp);
 
                     // Linearly interpolating the imu sample
-                    double ta = rclcpp::Time(imu_bundle.back().header.stamp).seconds();
-                    double tb = rclcpp::Time(imu_sample.header.stamp).seconds();
+                    double ta = Util::toDouble(imu_bundle.back().header.stamp);
+                    double tb = Util::toDouble(imu_sample.header.stamp);
 
                     // ASSUMPTION: IMU is spaced out
                     assert( tb - ta > 0 );
@@ -693,7 +696,7 @@ public:
                     Vector3d acce_itp = (1-s)*acce_ta + s*acce_tb;
 
                     imu_stamp = t_itp;
-                    imu_sample.header.stamp = rclcpp::Time(t_itp);
+                    imu_sample.header.stamp = Util::toRosTime(t_itp);
                     // imu_sample.header.seq = 0;
                     imu_sample.angular_velocity.x = gyro_itp(0);
                     imu_sample.angular_velocity.y = gyro_itp(1);
@@ -721,6 +724,8 @@ public:
             /* #endregion Probing the key buffers -------------------------------------------------------------------*/
 
             // Publish the synchronized data
+            // if(imu_bundle.size() != 0)
+            //     printf("imu_bundle: %f -> %f \n", Util::toDouble(imu_bundle.front().header.stamp), Util::toDouble(imu_bundle.back().header.stamp));
             data_pub->publish(msg);
         }
     }

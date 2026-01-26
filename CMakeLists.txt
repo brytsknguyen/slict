@@ -38,6 +38,10 @@ find_package(pcl_conversions REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Sophus REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
+find_package(ufomap REQUIRED)
+find_package(ufomap_msgs REQUIRED)
+find_package(ufomap_ros REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 # Other packages
 find_package(OpenMP REQUIRED)
@@ -82,12 +86,6 @@ find_package(Sophus REQUIRED)
 #   TimeLog.msg
 # )
 
-# ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   globalMapsPublish.srv
-# )
-
 ## Generate actions in the 'action' folder
 # add_action_files(
 #   FILES
@@ -95,18 +93,21 @@ find_package(Sophus REQUIRED)
 #   Action2.action
 # )
 
-# ## Generate added messages and services with any dependencies listed here
+## Generate added messages and services with any dependencies listed here
 # To generate messages
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FeatureCloud.msg"
+  "msg/OptStat.msg"
+  "msg/TimeLog.msg"
+  "srv/GlobalMapsPublish.srv"
   DEPENDENCIES std_msgs sensor_msgs geometry_msgs builtin_interfaces
 )
+ament_export_dependencies(rosidl_default_runtime)
 
 # Include directories
 include_directories(
 	include
   include/ikdTree
-	${catkin_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
   # ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
@@ -122,11 +123,32 @@ include_directories(
 # target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS})
 # target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
 
-# Synchronizer for lidar and IMU
-# add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
-# add_dependencies(${PROJECT_NAME}_sensorsync ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-# target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_sensorsync ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
+add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/tmnSolver.cpp src/PointToMapAssoc.cpp)
+target_include_directories(${PROJECT_NAME}_estimator PRIVATE /opt/ros/jazzy/include ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp)
+ament_target_dependencies(${PROJECT_NAME}_estimator
+  rclcpp
+  tf2_ros
+  visualization_msgs
+  sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
+  pcl_conversions
+  image_transport
+  Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
+)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(${PROJECT_NAME}_estimator
+  ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES}
+  ${cpp_typesupport_target}
+  OpenMP::OpenMP_CXX
+  fmt::fmt
+  UFO::Map
+)
+install(TARGETS
+  ${PROJECT_NAME}_estimator
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
 target_include_directories(${PROJECT_NAME}_sensorsync PRIVATE /opt/ros/jazzy/include) # To include sophus for some stupid reason
@@ -138,10 +160,13 @@ ament_target_dependencies(${PROJECT_NAME}_sensorsync
   pcl_conversions
   image_transport
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 rosidl_target_interfaces(${PROJECT_NAME}_sensorsync ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_sensorsync ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_sensorsync ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_sensorsync
@@ -152,12 +177,12 @@ install(TARGETS
 # add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
 # add_dependencies(${PROJECT_NAME}_imu_odom ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 # target_compile_options(${PROJECT_NAME}_imu_odom PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_imu_odom ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
+# target_link_libraries(${PROJECT_NAME}_imu_odom ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX UFO::Map Sophus::Sophus)
 # # Relocalization
 # add_executable(${PROJECT_NAME}_relocalization src/Relocalization.cpp src/STDesc.cpp)
 # add_dependencies(${PROJECT_NAME}_relocalization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 # target_compile_options(${PROJECT_NAME}_relocalization PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
+# target_link_libraries(${PROJECT_NAME}_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX UFO::Map Sophus::Sophus)
 
 
 # startregion Converter of different lidar formats to ouster ----------------------------------------------------------
@@ -172,9 +197,12 @@ ament_target_dependencies(${PROJECT_NAME}_velodyne_to_ouster
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_velodyne_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_velodyne_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_velodyne_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_velodyne_to_ouster
@@ -190,11 +218,14 @@ ament_target_dependencies(${PROJECT_NAME}_livox_to_ouster
   visualization_msgs
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
-  Sophus
   livox_ros_driver2
+  Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_livox_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_livox_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_livox_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_livox_to_ouster
@@ -211,9 +242,12 @@ ament_target_dependencies(${PROJECT_NAME}_hesai_to_ouster
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_hesai_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_hesai_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_hesai_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_hesai_to_ouster
@@ -230,9 +264,12 @@ ament_target_dependencies(${PROJECT_NAME}_bpearl_to_ouster
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_bpearl_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_bpearl_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_bpearl_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_bpearl_to_ouster
@@ -249,9 +286,12 @@ ament_target_dependencies(${PROJECT_NAME}_mulran_to_ouster
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_mulran_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_mulran_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_mulran_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_mulran_to_ouster
@@ -268,9 +308,12 @@ ament_target_dependencies(${PROJECT_NAME}_m2dgr_to_ouster
   sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
   pcl_conversions
   Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
 )
 target_compile_options(${PROJECT_NAME}_m2dgr_to_ouster PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_m2dgr_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} fmt::fmt)
+target_link_libraries(${PROJECT_NAME}_m2dgr_to_ouster ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
 # Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_m2dgr_to_ouster
@@ -279,6 +322,19 @@ install(TARGETS
 
 # closeregion Converter of different lidar formats to ouster ----------------------------------------------------------
 
-
+# Required to generate the message
 ament_export_dependencies(rosidl_default_runtime)
+
+# Install launch files
+install(DIRECTORY
+  launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+# Install config files
+install(DIRECTORY
+  config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
 ament_package()

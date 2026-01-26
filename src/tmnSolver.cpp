@@ -68,58 +68,63 @@ void InsertZeroRow(VectorXd &M, int row, int size)
     M = M_;
 }
 
-bool GetBoolParam(ros::NodeHandlePtr &nh, string param, bool default_value)
+bool GetBoolParam(const RosNodeHandlePtr &nh, const string &param_name, bool default_value)
 {
-    int param_;
-    nh->param(param, param_, default_value == true ? 1 : 0);
-    return (param_ == 0 ? false : true);
+    if(!nh->has_parameter(param_name))
+        nh->declare_parameter(param_name, rclcpp::PARAMETER_INTEGER);
+
+    int param_ = default_value ? 1 : 0;
+    nh->get_parameter(param_name, param_);
+    return (param_ == 1 ? true : false);
 }
+
 
 // Destructor
 tmnSolver::~tmnSolver(){};
 
 // Constructor
-tmnSolver::tmnSolver(ros::NodeHandlePtr &nh_) : nh(nh_)
+tmnSolver::tmnSolver(RosNodeHandlePtr &nh_) : nh(nh_)
 {
     // IMU noise
-    nh->getParam("/GYR_N", GYR_N);
-    nh->getParam("/GYR_W", GYR_W);
-    nh->getParam("/ACC_N", ACC_N);
-    nh->getParam("/ACC_W", ACC_W);
+    Util::GetParam(nh, "GYR_N", GYR_N);
+    Util::GetParam(nh, "GYR_W", GYR_W);
+    Util::GetParam(nh, "ACC_N", ACC_N);
+    Util::GetParam(nh, "ACC_W", ACC_W);
 
     // Dimension params
-    nh->param("WINDOW_SIZE", WINDOW_SIZE, 4);
-    nh->param("/N_SUB_SEG", N_SUB_SEG, 4);
-    nh->param("/SPLINE_N", SPLINE_N, 4);
-    
+    Util::GetParam(nh, "WINDOW_SIZE", WINDOW_SIZE);
+    Util::GetParam(nh, "N_SUB_SEG",  N_SUB_SEG);
+    Util::GetParam(nh, "SPLINE_N",   SPLINE_N);
+
     // Gravity constants
-    double GRAV_;
-    nh->param("/GRAV", GRAV_, 9.82);
+    double GRAV_ = 9.82;
+    Util::GetParam(nh, "GRAV", GRAV_);
     GRAV = Vector3d(0, 0, GRAV_);
 
     // Lidar weight
-    nh->getParam("/lidar_weight", lidar_weight);
+    Util::GetParam(nh, "lidar_weight", lidar_weight);
 
     // Damping factor
-    nh->getParam("/lambda", lambda);
+    Util::GetParam(nh, "lambda", lambda);
 
     // Select to whether to calculate the factor cost
-    find_factor_cost = GetBoolParam(nh, "/find_factor_cost", true);
+    find_factor_cost = GetBoolParam(nh, "find_factor_cost", true);
 
     // Select marginalization fusion
-    fuse_marg = GetBoolParam(nh, "/fuse_marg", false);
+    fuse_marg = GetBoolParam(nh, "fuse_marg", false);
 
     // Select marginalization fusion
-    nh->param("/dx_thres", dx_thres, 0.5);
+    dx_thres = 0.5;
+    Util::GetParam(nh, "dx_thres", dx_thres);
 
     // PointToMap associator
     pma = new PointToMapAssoc(nh_);
 
     // Maximum number of iterations
-    nh->getParam("/max_outer_iters", max_outer_iters);
+    Util::GetParam(nh, "max_outer_iters", max_outer_iters);
 
     // Maximum number of iterations
-    nh->getParam("/prior_weight", prior_weight);
+    Util::GetParam(nh, "prior_weight", prior_weight);
 
     // Reset the marginalization
     knot_x_keep.clear();
@@ -234,7 +239,7 @@ void tmnSolver::EvaluateLdrFactors
 
         // // Get the new pose
         // SE3d pose = traj.pose(sample_time);
-        
+
         // // New point coordinates
         // Vector3d finW_new = pose*coef.f;
 
@@ -301,7 +306,7 @@ void tmnSolver::EvaluatePriFactors
     VectorXd bprior = VectorXd::Zero(XALL_GSIZE);
     MatrixXd Hprior = MatrixXd::Zero(XALL_GSIZE, XALL_GSIZE);
 
-    // Create marginalizing factor if there is states kept from last optimization       
+    // Create marginalizing factor if there is states kept from last optimization
     SparseMatrix<double> rprior_sparse;
     SparseMatrix<double> Jprior_sparse;
 
@@ -309,7 +314,7 @@ void tmnSolver::EvaluatePriFactors
     if (knot_x_keep.size() != 0)
     {
         // Sanity check
-        ROS_ASSERT(curr_knot_x[knot_x_keep.front().first] == 0);
+        ROS_ASSERT_MSG(curr_knot_x[knot_x_keep.front().first] == 0, "curr_knot: %d", curr_knot_x[knot_x_keep.front().first]);
 
         // Calculate the prior residual
         // #pragma omp parallel for num_threads(MAX_THREADS)
@@ -326,8 +331,8 @@ void tmnSolver::EvaluatePriFactors
             // printf("xse3_keep: %d / %d, %f, %f, %f, %f\n",
             //         x_keep, xse3_keep.size(),
             //         xse3_keep[x_keep].so3().unit_quaternion().x(),
-            //         xse3_keep[x_keep].so3().unit_quaternion().y(), 
-            //         xse3_keep[x_keep].so3().unit_quaternion().z(), 
+            //         xse3_keep[x_keep].so3().unit_quaternion().y(),
+            //         xse3_keep[x_keep].so3().unit_quaternion().z(),
             //         xse3_keep[x_keep].so3().unit_quaternion().w() );
 
             Vector3d dr = (xse3_keep[x_keep].so3().inverse()*xr[x_curr]).log();
@@ -454,8 +459,8 @@ bool tmnSolver::Solve
     vector<ImuIdx>            &imuSelected,
     vector<lidarFeaIdx>       &featureSelected,
     string                    &bsu_report,
-    slict::OptStat            &report,
-    slict::TimeLog            &tlog
+    slict::msg::OptStat       &report,
+    slict::msg::TimeLog       &tlog
 )
 {
     TicToc tt_bsu;
@@ -467,7 +472,7 @@ bool tmnSolver::Solve
         ROS_ASSERT_MSG(prevSwNextBase == curr_knot_x.begin()->first,
                        "NextBase not matching: %d, %d",
                        prevSwNextBase, curr_knot_x.begin()->first);
-    if (iter == 0)                       
+    if (iter == 0)
         prevSwNextBase = swNextBase;
 
     // Total number of factors
@@ -511,7 +516,7 @@ bool tmnSolver::Solve
 
 
     /* #region  */ TicToc tt_himu;
-    
+
     double J0imu = 0;
     EvaluateImuFactors(traj, xr, xp, xbg, xba, SwImuBundle, imuSelected, ImuBias(BIGprior, BIAprior), RESIDUAL, JACOBIAN, find_factor_cost ? &J0imu : NULL);
 
@@ -519,7 +524,7 @@ bool tmnSolver::Solve
 
 
     /* #region  */ TicToc tt_hlidar;
-    
+
     double J0ldr = 0;
     EvaluateLdrFactors(traj, xr, xp, SwCloudDskDS, SwLidarCoef, featureSelected, RESIDUAL, JACOBIAN, find_factor_cost ? &J0ldr : NULL);
 
@@ -527,7 +532,7 @@ bool tmnSolver::Solve
 
 
     /* #region  */ TicToc tt_hprior;
-    
+
     double J0pri = 0;
     if(fuse_marg)
         EvaluatePriFactors(iter, prev_knot_x, curr_knot_x, xr, xp, xbg, xba, bprior_sparse, Hprior_sparse, NULL, NULL, find_factor_cost ? &J0pri : NULL);
@@ -622,7 +627,7 @@ bool tmnSolver::Solve
     }
     // Load the bias values
     BIG = xbg;
-    BIA = xba;    
+    BIA = xba;
 
     /* #endregion */ tt_compute.Toc();
 
@@ -643,7 +648,7 @@ bool tmnSolver::Solve
         SparseMatrix<double> Hprior_final_sparse;
         VectorXd bprior_final_reduced;
         MatrixXd Hprior_final_reduced;
-        
+
         EvaluateImuFactors(traj, xr, xp, xbg, xba, SwImuBundle, imuSelected, ImuBias(BIGprior, BIAprior), RESIDUAL, JACOBIAN, find_factor_cost ? &JKimu : NULL);
         EvaluateLdrFactors(traj, xr, xp, SwCloudDskDS, SwLidarCoef, featureSelected, RESIDUAL, JACOBIAN, find_factor_cost ? &JKldr : NULL);
         EvaluatePriFactors(iter, prev_knot_x, curr_knot_x, xr, xp, xbg, xba, bprior_final_sparse, Hprior_final_sparse, &bprior_final_reduced, &Hprior_final_reduced, find_factor_cost ? &JKpri : NULL);
@@ -677,7 +682,7 @@ bool tmnSolver::Solve
 
                 for(int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
                     if(x_knot_marg.find(knot_idx) == x_knot_marg.end())
-                        x_knot_keep[knot_idx] = curr_knot_x.begin()->first + knot_idx;    
+                        x_knot_keep[knot_idx] = curr_knot_x.begin()->first + knot_idx;
             }
         }
 
@@ -709,7 +714,7 @@ bool tmnSolver::Solve
 
                 for(int knot_idx = s; knot_idx < s + SPLINE_N; knot_idx++)
                     if(x_knot_marg.find(knot_idx) == x_knot_marg.end())
-                        x_knot_keep[knot_idx] = curr_knot_x.begin()->first + knot_idx;    
+                        x_knot_keep[knot_idx] = curr_knot_x.begin()->first + knot_idx;
             }
         }
 
@@ -763,17 +768,17 @@ bool tmnSolver::Solve
 
             // printf("Hpr %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
             //         Hprior_final_reduced.rows(), Hprior_final_reduced.rows(), XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
-            
+
             InsertZeroCol(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(Hprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
             InsertZeroRow(bprior_final_reduced, XSE3_OLDPR_SIZE, MK_XSE3_SIZE - knot_x_keep_retained.size()*XSE3_SIZE);
-            
+
             // printf("Hpr %d x %d. XSE3_OLDPR_SIZE: %d. MK_XSE3_SIZE: %d. keep_retained: %d\n",
             //         Hprior_final_reduced.rows(), Hprior_final_reduced.rows(), XSE3_OLDPR_SIZE, MK_XSE3_SIZE, knot_x_keep_retained.size()*XSE3_SIZE);
 
             SparseMatrix<double> H_extr_sparse = Hprior_final_reduced.sparseView(); H_extr_sparse.makeCompressed();
             SparseMatrix<double> b_extr_sparse = bprior_final_reduced.sparseView(); b_extr_sparse.makeCompressed();
-            
+
             H += H_extr_sparse;
             b += b_extr_sparse;
         }
@@ -826,28 +831,31 @@ bool tmnSolver::Solve
 
     // Drafting the report
 
-    report.surfFactors = ldr_factors;
-    report.J0Surf = J0ldr;
-    report.JKSurf = JKldr;
-    
-    report.imuFactors = imu_factors;
-    report.J0Imu = J0imu;
-    report.JKImu = JKimu;
+    report.surf_factors = ldr_factors;
+    report.j0surf = J0ldr;
+    report.jksurf = JKldr;
 
-    report.propFactors = 1;
-    report.J0Prop = J0pri;
-    report.JKProp = JKpri;
+    report.imu_factors = imu_factors;
+    report.j0imu = J0imu;
+    report.jkimu = JKimu;
 
-    report.velFactors = 0;
-    report.J0Vel = -1;
-    report.JKVel = -1;
+    report.prop_factors = 1;
+    report.j0prop = J0pri;
+    report.jkprop = JKpri;
+
+    report.vel_factors = 0;
+    report.j0vel = -1;
+    report.jkvel = -1;
 
     static double dj_thres = -1;
     if (dj_thres < 0)
-        nh->param("/dj_thres", dj_thres, 0.05);
+    {
+        dj_thres = 0.05;
+        Util::GetParam(nh, "dj_thres", dj_thres);
+    }
 
-    report.J0 = J0ldr + J0imu + J0pri;
-    report.JK = JKldr + JKimu + JKpri;
+    report.j0 = J0ldr + J0imu + J0pri;
+    report.jk = JKldr + JKimu + JKpri;
 
     /* #endregion */ tt_report.Toc();
 
@@ -872,7 +880,7 @@ bool tmnSolver::Solve
     tlog.t_hlidar.push_back(tt_hlidar.GetLastStop());
     tlog.t_compute.push_back(tt_compute.GetLastStop());
     tlog.t_marg.push_back(tt_marg.GetLastStop());
-    tlog.t_solve.push_back(tt_bsu.GetLastStop());    
+    tlog.t_solve.push_back(tt_bsu.GetLastStop());
 
     // Vector3d rpy = Util::Quat2YPR(xr[0].unit_quaternion());
     // bsu_report += myprintf("XPOS%02d. Pos: %9.3f, %9.3f, %9.3f. rpy: %8.3f, %8.3f, %8.3f.\n",

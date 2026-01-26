@@ -76,6 +76,11 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+// UFO map
+#include <ufo/math/vector3.h>
+#include <ufo/map/point_cloud.h>
+#include <ufo/map/surfel_map.h>
+
 // Sophus
 #include <sophus/se3.hpp>
 
@@ -1169,9 +1174,34 @@ namespace Util
     template <typename T>
     inline bool GetParam(const RosNodeHandlePtr &nh, const string &param_name, T &param)
     {
+        bool param_exists = nh->has_parameter(param_name);
+        if(!param_exists)
+            nh->declare_parameter(param_name, param);
+        return nh->get_parameter(param_name, param);
+    }
+
+    template <typename T>
+    inline bool GetParam(const RosNodeHandlePtr &nh, const string &param_name, T &param, T default_value)
+    {
+        param = default_value;
         if(!nh->has_parameter(param_name))
             nh->declare_parameter(param_name, param);
         return nh->get_parameter(param_name, param);
+    }
+
+    inline double toDouble(const rclcpp::Time &t)
+    {
+        return t.seconds();
+    }
+
+    inline double toDouble(const rclcpp::Duration &t)
+    {
+        return t.seconds();
+    }
+
+    inline rclcpp::Time toRosTime(double t)
+    {
+        return rclcpp::Time(static_cast<int64_t>(std::llround(t * 1000000000LL)));
     }
 
 }; // namespace Util
@@ -1638,7 +1668,7 @@ public:
 struct LidarCoef
 {
     double   t     = -1;  // Time stamp
-    // double   t_    = -1;
+    double   t_    = -1;
     int      ptIdx = -1;  // Index of points in the pointcloud
     Vector3d f;           // Coordinate of point in body frame
     Vector3d fdsk;        // Coordinate of point in body frame, deskewed
@@ -1677,35 +1707,35 @@ struct IMUData {
 };
 
 // Interfacing ufo::map data with Eigen
-// namespace ufo::math
-// {
-//     template<typename T>
-//     Eigen::Vector3d toEigen(ufo::math::Vector3<T> v)
-//     {
-//         return Eigen::Vector3d(v.x, v.y, v.z);
-//     }
-// }
+namespace ufo::math
+{
+    template<typename T>
+    Eigen::Vector3d toEigen(ufo::math::Vector3<T> v)
+    {
+        return Eigen::Vector3d(v.x, v.y, v.z);
+    }
+}
 
 
-// template <typename PointType>
-// void insertCloudToSurfelMap(ufo::map::SurfelMap &map,
-//                             pcl::PointCloud<PointType> &pclCloud)
-// {
-//     int cloudSize = pclCloud.size();
+template <typename PointType>
+void insertCloudToSurfelMap(ufo::map::SurfelMap &map,
+                            pcl::PointCloud<PointType> &pclCloud)
+{
+    int cloudSize = pclCloud.size();
 
-//     ufo::map::PointCloud ufoCloud;
-//     ufoCloud.resize(cloudSize);
+    ufo::map::PointCloud ufoCloud;
+    ufoCloud.resize(cloudSize);
 
-//     #pragma omp parallel for num_threads(omp_get_max_threads())
-//     for(int i = 0; i < cloudSize; i++)
-//     {
-//         ufoCloud[i].x = (float)pclCloud.points[i].x;
-//         ufoCloud[i].y = (float)pclCloud.points[i].y;
-//         ufoCloud[i].z = (float)pclCloud.points[i].z;
-//     }
+    #pragma omp parallel for num_threads(omp_get_max_threads())
+    for(int i = 0; i < cloudSize; i++)
+    {
+        ufoCloud[i].x = (float)pclCloud.points[i].x;
+        ufoCloud[i].y = (float)pclCloud.points[i].y;
+        ufoCloud[i].z = (float)pclCloud.points[i].z;
+    }
 
-//     map.insertSurfelPoint(std::begin(ufoCloud), std::end(ufoCloud));
-// }
+    map.insertSurfelPoint(std::begin(ufoCloud), std::end(ufoCloud));
+}
 
 
 template <typename PointType>

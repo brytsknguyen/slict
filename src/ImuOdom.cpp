@@ -34,7 +34,7 @@ typedef sensor_msgs::Imu::ConstPtr rosImuMsgPtr;
 typedef nav_msgs::Odometry rosOdomMsg;
 typedef nav_msgs::Odometry::ConstPtr rosOdomMsgPtr;
 
-ros::NodeHandlePtr nh_ptr;
+RosNodeHandlePtr nh_ptr;
 
 // Constant gravity vector
 Vector3d GRAV(0, 0, 9.82);
@@ -70,11 +70,11 @@ void imuCB(const rosImuMsgPtr &msg)
         opt_odom_last = *opt_odom;
     }
 
-    // Update the IMU odom message    
-    
+    // Update the IMU odom message
+
     // Publish the tf for easy tracking
     // static double last_tf_pub_time = -1;
-    
+
     // Transform the pose to the vehicle frame
     static mytf tf_B_V(R_B_V, t_B_V);
     mytf tf_W_V;
@@ -82,7 +82,7 @@ void imuCB(const rosImuMsgPtr &msg)
         tf_W_V = imu_prop->getBackTf()*tf_B_V;
     else
         tf_W_V = myTf(opt_odom_last)*tf_B_V;
-        
+
     pred_odom.header.frame_id = opt_odom->header.frame_id;
     pred_odom.header.stamp    = ros::Time(imu_prop->t.back());
     pred_odom.child_frame_id  = opt_odom_last.child_frame_id;

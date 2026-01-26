@@ -1,25 +1,25 @@
 /**
 * This file is part of slict.
-* 
+*
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
-* 
+*
 * For more information please see <https://britsknguyen.github.io>.
 * or <https://github.com/brytsknguyen/slict>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
-* 
+*
 * slict is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
-* 
+*
 * slict is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
-* 
+*
 * You should have received a copy of the GNU General Public License
 * along with slict.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -34,7 +34,7 @@
 #include "../utility.h"
 
 using ufoSurfelMap    = ufo::map::SurfelMap;
-using ufoSurfelMapPtr = boost::shared_ptr<ufoSurfelMap>;
+using ufoSurfelMapPtr = std::shared_ptr<ufoSurfelMap>;
 using ufoNode         = ufo::map::NodeBV;
 using ufoSphere       = ufo::geometry::Sphere;
 using ufoPoint3       = ufo::map::Point3;
@@ -62,7 +62,7 @@ struct assocSettings
         surfel_intsect_rad = surfel_intsect_rad_;
         dis_to_surfel_max  = dis_to_surfel_max_;
         lidar_weight       = lidar_weight;
-        factor_idx         = factor_idx_;        
+        factor_idx         = factor_idx_;
     };
 
     bool     use_ufm            = false;
@@ -138,14 +138,14 @@ public:
 
         // Lambda for R
         lambda_R = Btilde*U;
-        
+
         // Initializing state-dependent variables
         finW_opt   = new Vector3d();
         n_opt      = new Vector3d();
         m_opt      = new double;
         w_opt      = new double;
         iteration  = new int;
-        
+
         *finW_opt   =  finW;
         *n_opt      =  n;
         *m_opt      =  m;
@@ -234,7 +234,7 @@ public:
             p_inW_Bt += lambda_P[j]*Pos[j];
 
         /* #endregion Calculate the pose at sampling time -----------------------------------------------------------*/
-    
+
         /* #region Recalculate the normal, mean and noise -----------------------------------------------------------*/
 
         // Find the feature in the world frame
@@ -243,7 +243,7 @@ public:
         double shift = (f_inW - *finW_opt).norm();
         double currDis = (*n_opt).transpose() * (f_inW) + *m_opt;
 
-        if( settings.reassoc 
+        if( settings.reassoc
             && shift > settings.surfel_intsect_rad
             && (*iteration != 0 && *iteration % settings.reassoc_rate == 0) // Only enforced after at least one iteration
             // && curr_depth > *last_depth
@@ -339,7 +339,7 @@ public:
                         float score = (1 - 0.9 * fabs(d2p) / f.norm())*rho;
                         // float score = 1 - 0.9 * fabs(d2p) / (1 + pow(f.norm(), 4));
                         // float score = 1;
-                        
+
                         if (score > 0.05)
                         {
                             // Add to coeff
@@ -410,7 +410,7 @@ public:
         /* #endregion Jacobian of dis on knot_R ---------------------------------------------------------------------*/
 
         /* #region Jacobian of dis on knot P ------------------------------------------------------------------------*/
-        
+
         Matrix<double, 1, 3> ddis_dP[N];
         for (int j = 0; j < N; j++)
             ddis_dP[j] = (*n_opt).transpose()*Vector3d(lambda_P[j], lambda_P[j], lambda_P[j]).asDiagonal();
@@ -451,7 +451,7 @@ public:
     }
 
 private:
-    
+
     // Settings for the associations
     assocSettings settings;
 
@@ -491,7 +491,7 @@ private:
 
     // Lambda
     Matrix<double, Dynamic, 1> lambda_R;
-    
+
     // Lambda dot
     Matrix<double, Dynamic, 1> lambda_P;
 

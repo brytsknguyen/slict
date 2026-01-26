@@ -6,14 +6,14 @@ class MapManager
 private:
 
     // Node handle
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
     // Publishing the prior map for visualization
     CloudXYZITPtr  pmSurfGlobal;
     CloudXYZITPtr  pmEdgeGlobal;
     CloudXYZITPtr  priorMap;
     ros::Publisher priorMapPub;
-    
+
     using ufoSurfelMap = ufo::map::SurfelMap;
     ufoSurfelMap surfelMapSurf;
     ufoSurfelMap surfelMapEdge;
@@ -21,14 +21,14 @@ private:
 public:
 
    ~MapManager();
-    MapManager(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    MapManager(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         pmSurfGlobal = CloudXYZITPtr(new CloudXYZIT());
         pmEdgeGlobal = CloudXYZITPtr(new CloudXYZIT());
         priorMap     = CloudXYZITPtr(new CloudXYZIT());
 
         // Initializing priormap
-        priorMapPub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/priormap", 10);
+        priorMapPub = nh_ptr->advertise<RosPc2Msg>("/priormap", 10);
 
         string prior_map_dir = "";
         nh_ptr->param("/prior_map_dir", prior_map_dir, string(""));

@@ -1,17 +1,17 @@
 #include "PointToMapAssoc.h"
 
 // Construct the object
-PointToMapAssoc::PointToMapAssoc(ros::NodeHandlePtr &nh_) : nh(nh_)
+PointToMapAssoc::PointToMapAssoc(RosNodeHandlePtr &nh_) : nh(nh_)
 {
-    nh->getParam("/surfel_map_depth",   surfel_map_depth);
-    nh->getParam("/surfel_min_point",   surfel_min_point);
-    nh->getParam("/surfel_min_depth",   surfel_min_depth);
-    nh->getParam("/surfel_query_depth", surfel_query_depth);
-    nh->getParam("/surfel_intsect_rad", surfel_intsect_rad);
-    nh->getParam("/surfel_min_plnrty",  surfel_min_plnrty);
+    Util::GetParam(nh, "surfel_map_depth",   surfel_map_depth);
+    Util::GetParam(nh, "surfel_min_point",   surfel_min_point);
+    Util::GetParam(nh, "surfel_min_depth",   surfel_min_depth);
+    Util::GetParam(nh, "surfel_query_depth", surfel_query_depth);
+    Util::GetParam(nh, "surfel_intsect_rad", surfel_intsect_rad);
+    Util::GetParam(nh, "surfel_min_plnrty",  surfel_min_plnrty);
 
-    nh->getParam("/dis_to_surfel_max",  dis_to_surfel_max);
-    nh->getParam("/score_min",          score_min);
+    Util::GetParam(nh, "dis_to_surfel_max",  dis_to_surfel_max);
+    Util::GetParam(nh, "score_min",          score_min);
 }
 
 // Destructor
@@ -115,7 +115,7 @@ void PointToMapAssoc::AssociatePointWithMap(PointXYZIT &fRaw, Vector3d &finB, Ve
             || isnan(norm(0)) || isnan(norm(1)) || isnan(norm(2))
             || planarity < surfel_min_plnrty || planarity > 1.0
           )
-        {       
+        {
             // printf(KYEL "Node with anomaly surf: %d. m: %f, %f, %f. n: %f, %f, %f. rho: %f\n" RESET,
             //        node, mean(0), mean(1), mean(2), norm(0), norm(1), norm(2), planarity);
             continue;

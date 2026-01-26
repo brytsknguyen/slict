@@ -9,8 +9,8 @@
 #include "basalt/spline/posesplinex.h"
 
 // Solver report
-#include "slict/OptStat.h"
-#include "slict/TimeLog.h"
+#include "slict/msg/opt_stat.hpp"
+#include "slict/msg/time_log.hpp"
 
 // Utils
 #include "utility.h"
@@ -41,9 +41,9 @@ class tmnSolver
 {
 
 public:
-    
+
     // Constructor
-    tmnSolver(ros::NodeHandlePtr &nh_);
+    tmnSolver(RosNodeHandlePtr &nh_);
     // Destructor
    ~tmnSolver();
 
@@ -101,8 +101,8 @@ public:
         vector<ImuIdx>            &imuSelected,
         vector<lidarFeaIdx>       &featureSelected,
         string                    &iekf_report,
-        slict::OptStat            &report,
-        slict::TimeLog            &tlog
+        slict::msg::OptStat       &report,
+        slict::msg::TimeLog       &tlog
     );
 
     // Utility to convert between prior forms
@@ -114,11 +114,11 @@ public:
 private:
 
     // Node handle to get information needed
-    ros::NodeHandlePtr nh;
+    RosNodeHandlePtr nh;
 
     // gravity constant
     Vector3d GRAV;
-    
+
     // IMU params
     double GYR_N = 1.0;
     double ACC_N = 1.0;
@@ -151,8 +151,8 @@ private:
     // Marginalization info
     MatrixXd Hkeep;
     VectorXd bkeep;
-    MatrixXd Jm;            // 
-    VectorXd rm;            // 
+    MatrixXd Jm;            //
+    VectorXd rm;            //
     // Marginalized states
     vector<SE3d> xse3_keep;
     Vector3d xbig_keep;
@@ -162,8 +162,8 @@ private:
     // Index of knots in the marginalization hessian
     vector<pair<int, int>> knot_x_keep;
 
-    int WINDOW_SIZE;
-    int N_SUB_SEG;
-    int SPLINE_N;
+    int WINDOW_SIZE = 4;
+    int N_SUB_SEG = 4;
+    int SPLINE_N = 4;
 
 };

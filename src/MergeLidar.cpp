@@ -1,25 +1,25 @@
 /**
 * This file is part of merge_lidar.
-* 
+*
 * Copyright (C) 2020 Thien-Minh Nguyen <thienminh.nguyen at ntu dot edu dot sg>,
 * School of EEE
 * Nanyang Technological Univertsity, Singapore
-* 
+*
 * For more information please see <https://britsknguyen.github.io>.
 * or <https://github.com/britsknguyen/merge_lidar>.
 * If you use this code, please cite the respective publications as
 * listed on the above websites.
-* 
+*
 * merge_lidar is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
 * the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
-* 
+*
 * merge_lidar is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
-* 
+*
 * You should have received a copy of the GNU General Public License
 * along with merge_lidar.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -98,7 +98,7 @@ struct CloudPacket
     double endTime;
 
     CloudOusterPtr cloud;
-    
+
     CloudPacket(){};
     CloudPacket(double startTime_, double endTime_, CloudOusterPtr cloud_)
         : startTime(startTime_), endTime(endTime_), cloud(cloud_)
@@ -112,9 +112,9 @@ class MergeLidar
 {
 
 private:
-        
+
     // Node handler
-    ros::NodeHandlePtr nh_ptr;
+    RosNodeHandlePtr nh_ptr;
 
     // Subscribers
     vector<ros::Subscriber> lidar_sub;
@@ -143,12 +143,12 @@ private:
     double cutoff_time_new = -1;
 
     thread sync_lidar;
-    
+
 public:
     // Destructor
     ~MergeLidar() {}
 
-    MergeLidar(ros::NodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
+    MergeLidar(RosNodeHandlePtr &nh_ptr_) : nh_ptr(nh_ptr_)
     {
         // Initialize the variables and subsribe/advertise topics here
         Initialize();
@@ -158,7 +158,7 @@ public:
     {
 
         /* #region Lidar --------------------------------------------------------------------------------------------*/
-        
+
         // Read the lidar topic
         vector<string> lidar_topic = {"/os_cloud_node/points"};
         nh_ptr->getParam("lidar_topic", lidar_topic);
@@ -190,7 +190,7 @@ public:
             lidar_leftover_buf.push_back(deque<CloudPacket>(0));
 
             // Subscribe to the lidar topic
-            lidar_sub.push_back(nh_ptr->subscribe<sensor_msgs::PointCloud2>
+            lidar_sub.push_back(nh_ptr->subscribe<RosPc2Msg>
                                             (lidar_topic[i], 100,
                                              boost::bind(&MergeLidar::PcHandler, this,
                                                          _1, i, (int)extrinsicTf(3, 3),
@@ -210,7 +210,7 @@ public:
         // for(int i = 1; i < Nlidar; i++)
         //     lidar_ring_offset[i] = lidar_ring_offset[i-1] + lidar_channels[i-1];
 
-        merged_pc_pub = nh_ptr->advertise<sensor_msgs::PointCloud2>("/os_cloud_node_merged", 100);
+        merged_pc_pub = nh_ptr->advertise<RosPc2Msg>("/os_cloud_node_merged", 100);
 
         /* #endregion Lidar -----------------------------------------------------------------------------------------*/
 
@@ -219,7 +219,7 @@ public:
 
     }
 
-    void PcHandler(const sensor_msgs::PointCloud2::ConstPtr &msg, int idx, int stamp_type, double time_offset)
+    void PcHandler(const RosPc2Msg::ConstPtr &msg, int idx, int stamp_type, double time_offset)
     {
         double startTime = -1, endTime = -1;
         if (stamp_type == 1)
@@ -236,7 +236,7 @@ public:
         // Convert the cloud msg to pcl
         CloudOusterPtr cloud_inL(new CloudOuster());
         pcl::fromROSMsg(*msg, *cloud_inL);
-        
+
         // Check for the ring number so we can find the offset
         if(!lidar_ring_offset_set)
             lidar_ring_offset_set = checkLidarChannel(cloud_inL, idx);
@@ -259,7 +259,7 @@ public:
 
             // Copy the point
             PointOuster point_inB = point_inL;
-            
+
             // Replace the point coordinates
             point_inB.x = p_inL(0);
             point_inB.y = p_inL(1);
@@ -346,7 +346,7 @@ public:
             //     printf("Buf 0: Start: %.3f. End: %.3f / %.3f. Points: %d / %d. Size: %d\n",
             //            lidar_buf[0].front().startTime,
             //            lidar_buf[0].front().endTime, lidar_buf[0].back().endTime,
-            //            lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());    
+            //            lidar_buf[0].front().cloud->size(), lidar_buf[0].back().cloud->size(), lidar_buf[0].size());
             // }
 
             // if (lidar_buf.size() > 1)
@@ -380,7 +380,7 @@ public:
                 return false;
             }
         }
-        
+
         // If any secondary buffer's end still has not passed the first endtime in the primary buffer, loop
         for(int i = 1; i < Nlidar; i++)
         {
@@ -390,7 +390,7 @@ public:
             }
         }
 
-        return true;    
+        return true;
     }
 
     void ExtractLidarPoints(CloudPacket &extracted_points)
@@ -505,7 +505,7 @@ public:
 
     void publishCloud(ros::Publisher &pub, CloudOuster &cloud, ros::Time thisStamp, std::string thisFrame)
     {
-        sensor_msgs::PointCloud2 cloud_;
+        RosPc2Msg cloud_;
         pcl::toROSMsg(cloud, cloud_);
         cloud_.header.stamp = thisStamp;
         cloud_.header.frame_id = thisFrame;
@@ -517,7 +517,7 @@ int main(int argc, char **argv)
 {
     ros::init(argc, argv, "merge_lidar");
     ros::NodeHandle nh("~");
-    ros::NodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    RosNodeHandlePtr nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
 
     ROS_INFO(KGRN "----> Merge Lidar Started." RESET);
 
@@ -525,6 +525,6 @@ int main(int argc, char **argv)
 
     ros::MultiThreadedSpinner spinner(0);
     spinner.spin();
-    
+
     return 0;
 }
