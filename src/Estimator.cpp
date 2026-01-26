@@ -1722,9 +1722,9 @@ yolos("Sleeping for checking.\n");
                              "Map: %d\n"
                              "J0:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
                              "JK:  %15.3f, Ldr: %9.3f. IMU: %9.3f. Prp: %9.3f. Vel: %9.3f.\n"
-                            //  "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
-                            //  "Eimu: %7.2f, %7.2f, %7.2f. pimu: %7.2f, %7.2f, %7.2f. vimu: %7.2f, %7.2f, %7.2f.\n"
-                            //  "Eest: %7.2f, %7.2f, %7.2f. pest: %7.2f, %7.2f, %7.2f. vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
+                             "BiaG: %7.2f, %7.2f, %7.2f. BiaA: %7.2f, %7.2f, %7.2f. (%7.2f, %7.2f, %7.2f), (%7.2f, %7.2f, %7.2f)\n"
+                             "Eimu: %7.2f, %7.2f, %7.2f. pimu: %7.2f, %7.2f, %7.2f. vimu: %7.2f, %7.2f, %7.2f.\n"
+                             "Eest: %7.2f, %7.2f, %7.2f. pest: %7.2f, %7.2f, %7.2f. vest: %7.2f, %7.2f, %7.2f. Spd: %.3f. Dif: %.3f.\n"
                              "DVA:  %s\n",
                              // Time and iterations
                              report.opt_num, report.opt_num_sub, max_outer_iters,
@@ -1753,18 +1753,18 @@ yolos("Sleeping for checking.\n");
                              // Optimization final costs
                              report.jk, report.jksurf, report.jkimu, report.jkprop, report.jkvel,
                              // Bias Estimate
-                            //  ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
-                            //  ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
-                            //  BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
+                             ssBig.back().back().x(), ssBig.back().back().y(), ssBig.back().back().z(),
+                             ssBia.back().back().x(), ssBia.back().back().y(), ssBia.back().back().z(),
+                             BG_BOUND(0), BG_BOUND(1), BG_BOUND(2), BA_BOUND(0), BA_BOUND(1), BA_BOUND(2),
                              // Pose Estimate from propogation
-                            //  eul_imu.x(), eul_imu.y(), eul_imu.z(),
-                            //  report.pimu.x, report.pimu.y, report.pimu.z,
-                            //  report.vimu.x, report.vimu.y, report.vimu.z,
+                             eul_imu.x(), eul_imu.y(), eul_imu.z(),
+                             report.pimu.x, report.pimu.y, report.pimu.z,
+                             report.vimu.x, report.vimu.y, report.vimu.z,
                              // Pose Estimate from Optimization
-                            //  eul_est.x(), eul_est.y(), eul_est.z(),
-                            //  report.pest.x, report.pest.y, report.pest.z,
-                            //  report.vest.x, report.vest.y, report.vest.z,
-                            //  vest.norm(), (vest - vimu).norm(),
+                             eul_est.x(), eul_est.y(), eul_est.z(),
+                             report.pest.x, report.pest.y, report.pest.z,
+                             report.vest.x, report.vest.y, report.vest.z,
+                             vest.norm(), (vest - vimu).norm(),
                              // Report on the assocations at different scales
                              DVAReport.c_str())
                     : "\n";

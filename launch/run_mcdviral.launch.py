@@ -30,7 +30,8 @@ def generate_launch_description():
         output      = 'screen',                         # Print the node output to the screen
         parameters  = [
             config,
-            {"use_prior_map" : 0}
+            {"use_prior_map" :  0},
+            {"loop_en"       :  0},
         ]
     )
 
