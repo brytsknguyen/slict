@@ -3,8 +3,8 @@ SLICT: Multi-Input, Multi-Scale, Efficient, Surfel-Based, Lidar-Inertial Continu
 
 Note: This repo is being converted to ROS2.
 
-For the ROS 1 version, please checkout the **noetic** tag.
-For the SLICT 1 version, please checkout the **slict.1.0** tag.
+For the ROS 1 version, please checkout the [**noetic** tag](https://github.com/brytsknguyen/slict/releases/tag/noetic).
+For the SLICT 1 version, please checkout the [**slict.1.0** tag](https://github.com/brytsknguyen/slict/releases/tag/slict.1.0).
 
 # Publication
 The details of SLICT are presented in two RA-L papers. Please cite these works if you find SLICT useful:
