@@ -1,7 +1,10 @@
 SLICT: Multi-Input, Multi-Scale, Efficient, Surfel-Based, Lidar-Inertial Continuous-Time Odometry and Mapping, with Internal Association
 ===
 
-Note: This is an actively developed repo. The stable versions are listed at https://github.com/brytsknguyen/slict/tags.
+Note: This repo is being converted to ROS2.
+
+For the ROS 1 version, please checkout the **noetic** tag.
+For the SLICT 1 version, please checkout the **slict.1.0** tag.
 
 # Publication
 The details of SLICT are presented in two RA-L papers. Please cite these works if you find SLICT useful:
@@ -71,7 +74,7 @@ The software was developed on the following dependencies. Ubuntu 20.04 and ROS N
 - Sophus
   ```bash
   git clone https://github.com/strasdat/Sophus
-  cd Sophus
+  cd Sophus; git checkout 1.22.10;
   mkdir build && cd build
   cmake .. -DSOPHUS_USE_BASIC_LOGGING=ON
   make -j$(nproc)
