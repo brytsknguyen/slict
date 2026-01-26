@@ -714,7 +714,7 @@ public:
         global_maps_srv = nh_ptr->create_service<slict::srv::GlobalMapsPublish>("global_maps_publish", std::bind(&Estimator::PublishGlobalMaps, this, std::placeholders::_1, std::placeholders::_2));
 
         // Log file
-        log_dir = Util::GetParam(nh_ptr, "log_dir", log_dir);
+        Util::GetParam(nh_ptr, "log_dir", log_dir);
         log_dir_kf = log_dir + "/KFCloud/";
         std::filesystem::create_directories(log_dir);
         std::filesystem::create_directories(log_dir_kf);
@@ -1841,7 +1841,7 @@ yolos("Sleeping for checking.\n");
 
             // Export the summaries
             if (show_report)
-                cout << printout;
+                RINFO(printout);
 
             // std::thread vizSwTrajThread(&Estimator::VisualizeSwTraj, this);
             // std::thread vizSwLoopThread(&Estimator::VisualizeLoop, this);
