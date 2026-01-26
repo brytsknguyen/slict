@@ -75,7 +75,7 @@ def generate_launch_description():
         name        = "rviz2",
         output      = "screen",
         # emulate_tty = True,
-        arguments   = ["-d", 'mcdviral.rviz'],          # omit this line if you don't have a config
+        arguments   = ["-d", 'launch/mcdviral.rviz'],          # omit this line if you don't have a config
         parameters  = [],                               # optional: passes use_sim_time etc. (from your global yaml)
         # additional_env={
         #     # wipe anything that might inject snap libs

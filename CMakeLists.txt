@@ -115,16 +115,9 @@ include_directories(
 )
 
 
-# ## Declare a C++ library
-
-# # Main LIO
-# add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/tmnSolver.cpp src/PointToMapAssoc.cpp)
-# add_dependencies(${PROJECT_NAME}_estimator ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-# target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_estimator ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} UFO::Map Sophus::Sophus)
-
+# Main LIO
 add_executable(${PROJECT_NAME}_estimator src/Estimator.cpp include/ikdTree/ikd_Tree.cpp src/tmnSolver.cpp src/PointToMapAssoc.cpp)
-target_include_directories(${PROJECT_NAME}_estimator PRIVATE /opt/ros/jazzy/include ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp)
+target_include_directories(${PROJECT_NAME}_estimator PRIVATE /opt/ros/jazzy/include)
 ament_target_dependencies(${PROJECT_NAME}_estimator
   rclcpp
   tf2_ros
@@ -137,7 +130,8 @@ ament_target_dependencies(${PROJECT_NAME}_estimator
   ufomap_msgs
   ufomap_ros
 )
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+rosidl_target_interfaces(${PROJECT_NAME}_estimator ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_compile_options(${PROJECT_NAME}_estimator PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
 target_link_libraries(${PROJECT_NAME}_estimator
   ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES}
   ${cpp_typesupport_target}
@@ -150,6 +144,7 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Sensor sync
 add_executable(${PROJECT_NAME}_sensorsync src/SensorSync.cpp)
 target_include_directories(${PROJECT_NAME}_sensorsync PRIVATE /opt/ros/jazzy/include) # To include sophus for some stupid reason
 ament_target_dependencies(${PROJECT_NAME}_sensorsync
@@ -166,8 +161,13 @@ ament_target_dependencies(${PROJECT_NAME}_sensorsync
 )
 rosidl_target_interfaces(${PROJECT_NAME}_sensorsync ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_compile_options(${PROJECT_NAME}_sensorsync PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
-target_link_libraries(${PROJECT_NAME}_sensorsync ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX fmt::fmt UFO::Map)
-# Link the executable to the workspace library
+target_link_libraries(${PROJECT_NAME}_estimator
+  ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES}
+  ${cpp_typesupport_target}
+  OpenMP::OpenMP_CXX
+  fmt::fmt
+  UFO::Map
+)# Link the executable to the workspace library
 install(TARGETS
   ${PROJECT_NAME}_sensorsync
   DESTINATION lib/${PROJECT_NAME}
