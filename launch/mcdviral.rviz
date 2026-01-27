@@ -3,8 +3,9 @@ Panels:
     Help Height: 78
     Name: Displays
     Property Tree Widget:
-      Expanded: ~
-      Splitter Ratio: 0.658823549747467
+      Expanded:
+        - /GlobalMap1
+      Splitter Ratio: 0.6294117569923401
     Tree Height: 739
   - Class: rviz_common/Selection
     Name: Selection
@@ -23,7 +24,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: KfCloud
+    SyncSource: LastCloudInW
 Visualization Manager:
   Class: ""
   Displays:
@@ -56,14 +57,80 @@ Visualization Manager:
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
       Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 8636
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: GlobalMap
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_map
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 246; 211; 45
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 46
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: KfPose
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.800000011920929
+      Style: Spheres
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kfpose
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
       Decay Time: 600
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 7404
+      Max Intensity: 5616
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: GlobalMap
+      Name: KfCloud
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 1
@@ -74,7 +141,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /global_map
+        Value: /kfcloud
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -183,72 +250,6 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 600
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 7018
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: KfCloud
-      Position Transformer: XYZ
-      Selectable: true
-      Size (Pixels): 1
-      Size (m): 0.009999999776482582
-      Style: Points
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /kfcloud
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 3.4240589141845703
-        Min Value: -4.395147800445557
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz_default_plugins/PointCloud2
-      Color: 246; 211; 45
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 249; 240; 107
-      Max Intensity: 247
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: KfPose
-      Position Transformer: XYZ
-      Selectable: true
-      Size (Pixels): 6
-      Size (m): 1
-      Style: Spheres
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /kfpose
-      Use Fixed Frame: true
-      Use rainbow: false
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz_default_plugins/PointCloud2
-      Color: 255; 255; 255
       Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
@@ -271,19 +272,6 @@ Visualization Manager:
         Value: /lastcloud
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
-    - Class: rviz_default_plugins/Marker
-      Enabled: true
-      Name: LoopMarker
-      Namespaces:
-        loop_marker: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /loop_marker
       Value: true
   Enabled: true
   Global Options:
@@ -331,25 +319,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 95.59991455078125
+      Distance: 448.9477233886719
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 34.7962760925293
-        Y: -166.15380859375
-        Z: 18.144798278808594
+        X: 148.5677490234375
+        Y: -93.44060516357422
+        Z: -43.80276870727539
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8150015473365784
-      Target Frame: <Fixed Frame>
+      Pitch: 0.8353980183601379
+      Target Frame: world
       Value: Orbit (rviz)
-      Yaw: 4.128415107727051
+      Yaw: 5.338586330413818
     Saved: ~
 Window Geometry:
   Displays:
