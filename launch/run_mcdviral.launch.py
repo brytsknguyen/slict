@@ -16,8 +16,10 @@ bag_file = datapath + '/ntu_day_01/'
 # Session level experiment
 exp_log_dir   = "/home/tmn/slict_logs/mcdviral"             # Directory to log data
 autoexit      = 1                                           # Set to 1 so that slict_estimator exits when does not receive data for a while
-loop_en       = 0                                           # Set the 1 to enable loop closure in slict
-use_prior_map = 1                                           # Set to 1 to load and localize on the prior map directly
+loop_en       = 1                                           # Set the 1 to enable loop closure in slict
+# Relocalization problem
+use_prior_map = 0                                           # Set to 1 to load and localize on the prior map directly
+# Select the prior map based on the bag file
 prior_map_dir = ""
 prior_map_dir = "/home/tmn/DATASETS/MCDVIRAL/PriorMap/NTU"  if 'ntu_'  in bag_file else prior_map_dir
 prior_map_dir = "/home/tmn/DATASETS/MCDVIRAL/PriorMap/KTH"  if 'kth_'  in bag_file else prior_map_dir
@@ -25,7 +27,6 @@ prior_map_dir = "/home/tmn/DATASETS/MCDVIRAL/PriorMap/TUHH" if 'tuhh_' in bag_fi
 if use_prior_map != 0:
     assert prior_map_dir != "", "a path to prior map must be set when use_prior_map is set!"
     assert loop_en == 0, "loop closure must be disabled when using prior map!"
-
 # List of transform to align with prior map
 tf_Lprior_L0 = {
     "ntu_day_01":    [  49.28,  107.38,   7.58,  -41,    0,   0],
@@ -133,7 +134,7 @@ def generate_launch_description():
         cmd=['bash', '-c',
             f'''
                 # trap "kill 0" INT TERM EXIT
-                for b in "{bag_file}"/*_os1_mid70_vn100_jazzy; do
+                for b in "{bag_file}"/*_jazzy; do
                 echo "Playing $b"
                 ros2 bag play "$b" --read-ahead-queue-size 5000 &
                 done
