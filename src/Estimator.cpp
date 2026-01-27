@@ -86,7 +86,7 @@
 #include <ufomap_ros/conversions.h>
 
 // Factor
-#include "PoseLocalParameterization.h"
+// #include "PoseLocalParameterization.h"
 // #include "PreintBase.h"
 // #include "factor/PreintFactor.h"
 // #include "factor/PointToPlaneDisFactorCT.h"
@@ -4184,7 +4184,7 @@ yolos("Sleeping for checking.\n");
             PARAM_POSE[i][5] = kfCloud->points[i].qz;
             PARAM_POSE[i][6] = kfCloud->points[i].qw;
 
-            ceres::Manifold *local_parameterization = new PoseLocalParameterization();
+            ceres::Manifold *local_parameterization = new SO3xR3Manifold();
             problem.AddParameterBlock(PARAM_POSE[i], 7, local_parameterization);
 
             // Fix the last pose

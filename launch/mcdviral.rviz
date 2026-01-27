@@ -3,8 +3,7 @@ Panels:
     Help Height: 78
     Name: Displays
     Property Tree Widget:
-      Expanded:
-        - /PredictOdom1/Shape1
+      Expanded: ~
       Splitter Ratio: 0.6294117569923401
     Tree Height: 739
   - Class: rviz_common/Selection
@@ -61,7 +60,7 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 8636
+      Max Intensity: 10421
       Min Color: 0; 0; 0
       Min Intensity: 0
       Name: GlobalMap
@@ -127,7 +126,7 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 6722
+      Max Intensity: 6378
       Min Color: 0; 0; 0
       Min Intensity: 0
       Name: KfCloud
@@ -218,7 +217,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: true
-      Enabled: false
+      Enabled: true
       Keep: 1
       Name: OptOdom
       Position Tolerance: 0
@@ -239,39 +238,6 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /opt_odom
-      Value: false
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz_default_plugins/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 6918
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: LastCloudInW
-      Position Transformer: XYZ
-      Selectable: true
-      Size (Pixels): 1
-      Size (m): 9.999999747378752e-05
-      Style: Points
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /lastcloud
-      Use Fixed Frame: true
-      Use rainbow: true
       Value: true
     - Angle Tolerance: 0
       Class: rviz_default_plugins/Odometry
@@ -311,6 +277,52 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /pred_odom_W_V
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 6918
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: LastCloudInW
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 1
+      Size (m): 9.999999747378752e-05
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /lastcloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: LoopEdge
+      Namespaces:
+        loop_marker: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /loop_marker
       Value: true
   Enabled: true
   Global Options:
@@ -358,25 +370,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 47.4737663269043
+      Distance: 479.6697692871094
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 54.955535888671875
+        Y: 39.624610900878906
+        Z: 10.132932662963867
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7303982377052307
+      Pitch: 0.9047955274581909
       Target Frame: body
       Value: Orbit (rviz)
-      Yaw: 2.285398006439209
+      Yaw: 6.176752090454102
     Saved: ~
 Window Geometry:
   Displays:

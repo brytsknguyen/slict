@@ -13,9 +13,11 @@ from ament_index_python.packages import get_package_share_directory
 datapath = '/home/tmn/DATASETS/MCDVIRAL/'
 bag_file = datapath + '/ntu_day_01/'
 
-# Directory to log data
-exp_log_dir ="/home/tmn/slict_logs/mcdviral"
-
+# Session level experiment
+exp_log_dir   = "/home/tmn/slict_logs/mcdviral"             # Directory to log data
+autoexit      = 1                                           # Set to 1 so that slict_estimator exits when does not receive data for a while
+loop_en       = 1                                           # Set the 1 to enable loop closure in slict
+use_prior_map = 0                                           # Set to 1 to load and localize on the prior map directly
 
 # Create nodes to launch
 launch_nodes = {}
@@ -54,9 +56,9 @@ def generate_launch_description():
         output      = 'screen',                         # Print the node output to the screen
         parameters  = [
             config,
-            {"autoexit"      :  1},
-            {"use_prior_map" :  0},
-            {"loop_en"       :  0},
+            {"autoexit"      :  autoexit},
+            {"use_prior_map" :  use_prior_map},
+            {"loop_en"       :  loop_en},
             {"log_dir"       :  exp_log_dir}
         ]
     )

@@ -3,7 +3,7 @@
 #include "STDesc.h"
 #include "utility.h"
 
-#include "PoseLocalParameterization.h"
+// #include "PoseLocalParameterization.h"
 #include <ceres/ceres.h>
 
 // UFO
@@ -26,6 +26,7 @@
 #include <pcl/pcl_base.h>
 
 #include "GaussianProcess.hpp"
+
 // Shorthands
 typedef RosPc2Msg::ConstPtr rosCloudMsgPtr;
 typedef RosPc2Msg rosCloudMsg;

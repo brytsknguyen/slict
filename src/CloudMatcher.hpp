@@ -41,10 +41,6 @@
 #include <pcl/registration/ndt.h>
 #include <pcl/kdtree/kdtree_flann.h>
 
-#include "utility.h"
-
-// #include "PoseLocalParameterization.h"
-
 #ifndef CLOUDMATCHER_HPP
 #define CLOUDMATCHER_HPP
 
@@ -55,66 +51,6 @@ using namespace pcl;
 #include <eigen3/Eigen/Dense>
 #include <ceres/ceres.h>
 #include "utility.h"
-
-// class PoseLocalParameterization : public ceres::Manifold
-// {
-//     bool Plus(const double *x, const double *delta, double *x_plus_delta) const
-//     {
-//         Eigen::Map<const Eigen::Vector3d> _p(x);
-//         Eigen::Map<const Eigen::Quaterniond> _q(x + 3);
-
-//         Eigen::Map<const Eigen::Vector3d> dp(delta);
-//         Eigen::Quaterniond dq = Util::QExp(Eigen::Map<const Eigen::Vector3d>(delta + 3));
-
-//         Eigen::Map<Eigen::Vector3d> p(x_plus_delta);
-//         Eigen::Map<Eigen::Quaterniond> q(x_plus_delta + 3);
-
-//         p = _p + dp;
-//         q = (_q * dq).normalized();
-
-//         return true;
-//     }
-
-//     virtual bool PlusJacobian(const double *x, double *jacobian) const
-//     {
-//         Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor>> J(jacobian);
-//         J.setZero();
-//         J.topRows<6>().setIdentity();
-
-//         return true;
-//     }
-
-//     bool Minus(const double *y, const double *x, double *y_minus_x) const
-//     {
-//         Eigen::Map<const Eigen::Vector3d> _px(x);
-//         Eigen::Map<const Eigen::Quaterniond> _qx(x + 3);
-
-//         Eigen::Map<const Eigen::Vector3d> _py(y);
-//         Eigen::Map<const Eigen::Quaterniond> _qy(y + 3);
-
-//         Eigen::Map<Matrix<double, 6, 6>> y_minus_x_(y_minus_x);
-
-//         y_minus_x_.block<3, 1>(0, 0) = _py - _px;
-//         y_minus_x_.block<3, 1>(3, 0) = Util::QLog(_qx.inverse()*_qy);
-
-//         return true;
-//     }
-
-//     virtual bool MinusJacobian(const double* x, double* jacobian) const
-//     {
-//         Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::RowMajor>>  J(jacobian);
-//         J.setZero();
-//         J.topRows<6>().setIdentity();
-
-//         return true;
-//     }
-
-//     ///@brief Global size
-//     virtual int AmbientSize() const { return 7; }
-
-//     ///@brief Local size
-//     virtual int TangentSize() const { return 6; }
-// };
 
 struct IOAOptions
 {
@@ -288,7 +224,7 @@ public:
             options.num_threads = MAX_THREADS;
 
             // Add parameter blocks
-            ceres::Manifold *local_parameterization = new PoseLocalParameterization();
+            ceres::Manifold *local_parameterization = new SO3xR3Manifold();
             problem.AddParameterBlock(PARAM_POSE, 7, local_parameterization);
 
             // Add factors
