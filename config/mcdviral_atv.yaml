@@ -74,7 +74,7 @@
     # Rate of doing reassociation
     reassoc_rate:       0
     # Use ceres
-    use_ceres:          1
+    use_ceres:          0
 
     # Downsampling grid size, chose -1 for no downsampling
     leaf_size:          0.1           # Downsample scale of input pointcloud, also the scale of ufomap leaf
@@ -102,7 +102,7 @@
     sweep_len:          1
 
     # Threshold to add new keyframe
-    kf_min_dis:         5.0
+    kf_min_dis:         10.0
     kf_min_angle:       20.0
     refine_kf:          0
 
@@ -150,10 +150,10 @@
     histDis:            15.0  # Maximum correspondence distance for icp
 
     # Bundle adjustment params
-    rib_edge:           100
+    rib_edge:           20
     odom_q_noise:       0.1
     odom_p_noise:       0.1
-    loop_weight:        0.05
+    loop_weight:        0.1
 
     # Number of optimizations before quitting
     publish_map:        0

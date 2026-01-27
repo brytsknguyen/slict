@@ -742,12 +742,6 @@ public:
         if (!use_prior_map)
             return;
 
-        while(rclcpp::ok())
-        {
-            this_thread::sleep_for(std::chrono::milliseconds(1000));
-yolos("Sleeping for checking.\n");
-        }
-
         // Check if initial pose is available
         rclcpp::Parameter param;
         if(nh_ptr->get_parameter("tf_Lprior_L0_init", param))
