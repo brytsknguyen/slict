@@ -43,7 +43,7 @@
 
 #include "utility.h"
 
-#include "PoseLocalParameterization.h"
+// #include "PoseLocalParameterization.h"
 
 #ifndef CLOUDMATCHER_HPP
 #define CLOUDMATCHER_HPP

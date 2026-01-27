@@ -28,11 +28,10 @@
 //
 
 #include "utility.h"
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
-typedef sensor_msgs::Imu rosImuMsg;
-typedef sensor_msgs::Imu::ConstPtr rosImuMsgPtr;
-typedef nav_msgs::Odometry rosOdomMsg;
-typedef nav_msgs::Odometry::ConstPtr rosOdomMsgPtr;
+
 
 RosNodeHandlePtr nh_ptr;
 
@@ -41,17 +40,15 @@ Vector3d GRAV(0, 0, 9.82);
 
 mutex imu_buf_mtx;
 std::shared_ptr<ImuProp> imu_prop = nullptr;
-rosOdomMsgPtr opt_odom;
+RosOdomMsg::ConstSharedPtr opt_odom;
 
 Matrix4d T_B_V;
 Matrix3d R_B_V;
 Vector3d t_B_V;
 
-rosOdomMsg pred_odom;
-
-void imuCB(const rosImuMsgPtr &msg)
+void imuCB(const RosImuMsg::ConstSharedPtr &msg)
 {
-    rosOdomMsg opt_odom_last;
+    RosOdomMsg opt_odom_last;
 
     {
         lock_guard<mutex> lg(imu_buf_mtx);
@@ -62,7 +59,7 @@ void imuCB(const rosImuMsgPtr &msg)
         if(imu_prop->t.back() == 0)
             return;
 
-        if (msg->header.stamp.toSec() <= imu_prop->t.back())
+        if (Util::toDouble(msg->header.stamp) <= imu_prop->t.back())
             return;
 
         imu_prop->forwardPropagate(msg);
@@ -70,55 +67,65 @@ void imuCB(const rosImuMsgPtr &msg)
         opt_odom_last = *opt_odom;
     }
 
-    // Update the IMU odom message
-
-    // Publish the tf for easy tracking
-    // static double last_tf_pub_time = -1;
-
     // Transform the pose to the vehicle frame
     static mytf tf_B_V(R_B_V, t_B_V);
     mytf tf_W_V;
-    if(fabs(imu_prop->t.back() - opt_odom->header.stamp.toSec()) < 1.0 )
+    if(fabs(imu_prop->t.back() - Util::toDouble(opt_odom->header.stamp) < 1.0))
         tf_W_V = imu_prop->getBackTf()*tf_B_V;
     else
         tf_W_V = myTf(opt_odom_last)*tf_B_V;
 
+    // Advertise the imu predicted odom and publish it
+    static auto pred_odom_pub = nh_ptr->create_publisher<RosOdomMsg>("pred_odom_W_V", 10);
+    // Predict odom
+    RosOdomMsg pred_odom;
     pred_odom.header.frame_id = opt_odom->header.frame_id;
-    pred_odom.header.stamp    = ros::Time(imu_prop->t.back());
+    pred_odom.header.stamp    = Util::toRosTime(imu_prop->t.back());
     pred_odom.child_frame_id  = opt_odom_last.child_frame_id;
-
+    // trans
     pred_odom.pose.pose.position.x = tf_W_V.pos.x();
     pred_odom.pose.pose.position.y = tf_W_V.pos.y();
     pred_odom.pose.pose.position.z = tf_W_V.pos.z();
-
+    // rot
     pred_odom.pose.pose.orientation.x = tf_W_V.rot.x();
     pred_odom.pose.pose.orientation.y = tf_W_V.rot.y();
     pred_odom.pose.pose.orientation.z = tf_W_V.rot.z();
     pred_odom.pose.pose.orientation.w = tf_W_V.rot.w();
-
+    // twist
     pred_odom.twist.twist.linear.x = imu_prop->V.back().x();
     pred_odom.twist.twist.linear.y = imu_prop->V.back().y();
     pred_odom.twist.twist.linear.z = imu_prop->V.back().z();
+    // Publish
+    pred_odom_pub->publish(pred_odom);
 
-    // Advertise the imu predicted odom and publish it
-    static ros::Publisher pred_odom_pub = nh_ptr->advertise<nav_msgs::Odometry>("/pred_odom_W_V", 10);
-    pred_odom_pub.publish(pred_odom);
-
-    static tf::TransformBroadcaster tfbr;
-    tf::Transform transform;
-    transform.setOrigin(tf::Vector3(tf_W_V.pos(0), tf_W_V.pos(1), tf_W_V.pos(2)));
-    transform.setRotation(tf::Quaternion(tf_W_V.rot.w(), tf_W_V.rot.x(), tf_W_V.rot.y(), tf_W_V.rot.z()));
-    tfbr.sendTransform(tf::StampedTransform(transform, ros::Time::now(), pred_odom.header.frame_id, pred_odom.child_frame_id));
+    // Create the tf broadcaster
+    static std::shared_ptr<tf2_ros::TransformBroadcaster> tfbr = std::make_shared<tf2_ros::TransformBroadcaster>(nh_ptr);;
+    // Publish the tf data
+    geometry_msgs::msg::TransformStamped tf;
+    tf.header.stamp    = nh_ptr->now();                // rclcpp::Time
+    tf.header.frame_id = pred_odom.header.frame_id;    // parent
+    tf.child_frame_id  = pred_odom.child_frame_id;     // child
+    // trans
+    tf.transform.translation.x = tf_W_V.pos(0);
+    tf.transform.translation.y = tf_W_V.pos(1);
+    tf.transform.translation.z = tf_W_V.pos(2);
+    // rot
+    tf.transform.rotation.w = tf_W_V.rot.w();
+    tf.transform.rotation.x = tf_W_V.rot.x();
+    tf.transform.rotation.y = tf_W_V.rot.y();
+    tf.transform.rotation.z = tf_W_V.rot.z();
+    // broadcast
+    tfbr->sendTransform(tf);
 }
 
-void odomCB(const rosOdomMsgPtr &msg)
+void odomCB(const RosOdomMsg::ConstSharedPtr &msg)
 {
     lock_guard<mutex> lg(imu_buf_mtx);
 
     opt_odom = msg;
 
     // // Repropagate the pose
-    double t_odom = msg->header.stamp.toSec();
+    double t_odom = Util::toDouble(msg->header.stamp);
     Quaternd orientation(
         msg->pose.pose.orientation.w,
         msg->pose.pose.orientation.x,
@@ -160,25 +167,27 @@ void odomCB(const rosOdomMsgPtr &msg)
     }
 
     imu_prop = imu_prop_;
+
 }
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "ImuOdom");
-    ros::NodeHandle nh("~");
-    nh_ptr = boost::make_shared<ros::NodeHandle>(nh);
+    rclcpp::init(argc, argv);
+    rclcpp::NodeOptions options;
+    options.automatically_declare_parameters_from_overrides(true);
+    nh_ptr = rclcpp::Node::make_shared("imuodom", options);
 
-    ROS_INFO(KGRN "----> Imu Odometry Started." RESET);
+    RINFO(KGRN "----> Imu Odometry Started." RESET);
 
     double GRAV_ = 9.82;
-    nh_ptr->param("/GRAV", GRAV_, 9.82);
+    Util::GetParam(nh_ptr, "GRAV", GRAV_, 9.82);
     GRAV = Vector3d(0, 0, GRAV_);
 
     vector<double> T_B_V_ = {1, 0, 0, 0,
                              0, 1, 0, 0,
                              0, 0, 1, 0,
                              0, 0, 0, 1};
-    nh_ptr->getParam("/T_B_V", T_B_V_);
+    Util::GetParam(nh_ptr, "T_B_V", T_B_V_);
     T_B_V = Matrix<double, 4, 4, RowMajor>(&T_B_V_[0]);
     R_B_V = T_B_V.block<3,3>(0, 0);
     t_B_V = T_B_V.block<3,1>(0, 3);
@@ -186,18 +195,16 @@ int main(int argc, char **argv)
     printf("Received T_B_V: \n");
     cout << T_B_V << endl;
 
-    // Create the common message
-    // pred_odom.child_frame_id  = "";
-
     // Subscribe to the IMU topic
-    string imu_topic = nh_ptr->param("/imu_topic", imu_topic);
-    ros::Subscriber imu_sub = nh_ptr->subscribe(imu_topic, 10, imuCB);
+    string imu_topic; Util::GetParam(nh_ptr, "imu_topic", imu_topic);
+    auto imu_sub = nh_ptr->create_subscription<RosImuMsg>(imu_topic, rclcpp::QoS(10), imuCB);
 
     // Subscribe to the odom topic
-    ros::Subscriber odom_sub = nh_ptr->subscribe("/opt_odom", 10, odomCB);
+    auto odom_sub = nh_ptr->create_subscription<RosOdomMsg>("opt_odom", rclcpp::QoS(10), odomCB);
 
-    ros::MultiThreadedSpinner spinner(0);
-    spinner.spin();
+    // Spin
+    rclcpp::spin(nh_ptr);
+    rclcpp::shutdown();
 
     return 0;
 }

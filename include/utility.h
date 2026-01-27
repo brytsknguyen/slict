@@ -1491,7 +1491,8 @@ public:
         bg = bg_; ba = ba_; grav = grav_;
     }
 
-    void forwardPropagate(const RosImuMsgPtr &msg)
+    template<typename T>
+    void forwardPropagate(const T &msg)
     {
         Vector3d gyrn(msg->angular_velocity.x,
                       msg->angular_velocity.y,

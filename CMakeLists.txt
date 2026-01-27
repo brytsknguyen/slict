@@ -173,17 +173,34 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# # IMU prediction
-# add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
-# add_dependencies(${PROJECT_NAME}_imu_odom ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-# target_compile_options(${PROJECT_NAME}_imu_odom PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_imu_odom ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX UFO::Map Sophus::Sophus)
-# # Relocalization
-# add_executable(${PROJECT_NAME}_relocalization src/Relocalization.cpp src/STDesc.cpp)
-# add_dependencies(${PROJECT_NAME}_relocalization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-# target_compile_options(${PROJECT_NAME}_relocalization PRIVATE ${OpenMP_CXX_FLAGS})
-# target_link_libraries(${PROJECT_NAME}_relocalization ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX UFO::Map Sophus::Sophus)
-
+# IMU prediction
+add_executable(${PROJECT_NAME}_imu_odom src/ImuOdom.cpp)
+target_include_directories(${PROJECT_NAME}_imu_odom PRIVATE /opt/ros/jazzy/include) # To include sophus for some stupid reason
+ament_target_dependencies(${PROJECT_NAME}_imu_odom
+  rclcpp
+  tf2_ros
+  visualization_msgs
+  sensor_msgs std_msgs geometry_msgs nav_msgs tf2_msgs
+  pcl_conversions
+  image_transport
+  Sophus
+  ufomap
+  ufomap_msgs
+  ufomap_ros
+)
+rosidl_target_interfaces(${PROJECT_NAME}_imu_odom ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_compile_options(${PROJECT_NAME}_imu_odom PRIVATE ${OpenMP_CXX_FLAGS} "-isystem ${PCL_INCLUDE_DIRS}")
+target_link_libraries(${PROJECT_NAME}_imu_odom
+  ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES}
+  ${cpp_typesupport_target}
+  OpenMP::OpenMP_CXX
+  fmt::fmt
+  UFO::Map
+)# Link the executable to the workspace library
+install(TARGETS
+  ${PROJECT_NAME}_imu_odom
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # startregion Converter of different lidar formats to ouster ----------------------------------------------------------
 
