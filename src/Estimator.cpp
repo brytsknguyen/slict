@@ -1350,10 +1350,14 @@ public:
                 ROS_ASSERT_MSG(!imuSubSeq.empty(), "(!imuSubSeq.empty()) is %s", !imuSubSeq.empty()?"true":"false");
 
                 // ASSUMPTION: an IMU sample is interpolated at each segment's start and end point
-                ROS_ASSERT_MSG(imuSubSeq.front().t == subSegment.start_time && imuSubSeq.back().t == subSegment.final_time,
+                ROS_ASSERT_MSG(fabs(imuSubSeq.front().t - subSegment.start_time) < 1.0e-6 && fabs(imuSubSeq.back().t - subSegment.final_time) < 1.0e-6,
                                "IMU Time: %f, %f. Seg. Time: %f, %f\n",
                                imuSubSeq.front().t, imuSubSeq.back().t, subSegment.start_time, subSegment.final_time);
 
+                // Just to make sure there is no funny rounding error
+                imuSubSeq.front().t = subSegment.start_time; imuSubSeq.back().t = subSegment.final_time;
+
+                // Propagate IMU data
                 SwPropState.back()[i] = ImuProp(ssQua.back()[i], ssPos.back()[i], ssVel.back()[i],
                                                 ssBig.back()[i], ssBia.back()[i], GRAV, imuSubSeq);
 
