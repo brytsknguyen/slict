@@ -7,7 +7,7 @@ do
    VALUE="${ARGUMENT:$KEY_LENGTH+1}"
 
    export "$KEY"="$VALUE"
-   
+
    printf "$KEY: \t%s\n" "$VALUE"
 done
 
@@ -42,7 +42,7 @@ export LOOP_EN=$_LOOP_EN;
 # Begin the processing
 
 # Find the path to the package
-ROS_PKG_DIR=$(rospack find $ROS_PKG)
+ROS_PKG_DIR=$(ros2 pkg prefix $ROS_PKG)
 
 # Notify the bag file
 echo BAG FILE: "${ROSBAG_PATH}";
@@ -53,9 +53,9 @@ then
 # Create the log director
 mkdir -p $LOG_PATH/ ;
 # Copy the config folders for later references
-cp -R $ROS_PKG_DIR/config $LOG_PATH;
-cp -R $ROS_PKG_DIR/launch $LOG_PATH;
-cp -R $ROS_PKG_DIR/script $LOG_PATH;
+cp -R $ROS_PKG_DIR/config  $LOG_PATH;
+cp -R $ROS_PKG_DIR/launch  $LOG_PATH;
+cp -R $ROS_PKG_DIR/scripts $LOG_PATH;
 # Create folder for BA output
 mkdir -p $LOG_PATH/ba;
 
@@ -94,11 +94,11 @@ echo LOGGING ON;
 (
 # xterm -T "GTGEN ${AFFIX}" -geometry 138x40+1075+-8 -e \
 # "
-roslaunch $ROS_PKG $LAUNCH_FILE \
-autorun:=1 \
+ros2 launch $ROS_PKG $LAUNCH_FILE \
+autoexit:=1 \
 loop_en:=$LOOP_EN \
 bag_file:=$ROSBAG_PATH \
-exp_log_dir:=$LOG_PATH/ba \
+log_dir:=$LOG_PATH/ba \
 # 2>&1 | tee -a $LOG_PATH/terminal_log.txt
 # "
 )&
@@ -106,22 +106,22 @@ exp_log_dir:=$LOG_PATH/ba \
 MAIN_PID=$!
 
 # Log the topics
-( sleep 1; rostopic echo -p --nostr --noarr /pred_odom \
+( sleep 1; ros2 topic echo --csv /pred_odom \
 > $LOG_PATH/predict_odom.csv ) \
 & \
-( sleep 1; rostopic echo -p --nostr --noarr /opt_odom \
+( sleep 1; ros2 topic echo --csv /opt_odom \
 > $LOG_PATH/opt_odom.csv ) \
 & \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH -p --nostr --noarr /leica/pose/relative \
+# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /leica/pose/relative \
 # > $LOG_PATH/leica_pose.csv ) \
 # & \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH -p --nostr --noarr /dji_sdk/imu \
+# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /dji_sdk/imu \
 # > $LOG_PATH/dji_sdk_imu.csv ) \
 # & \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH -p --nostr --noarr $IMU_TOPIC \
+# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv $IMU_TOPIC \
 # > $LOG_PATH/vn100_imu.csv ) \
 # & \
-( sleep 1; rostopic echo -p --nostr --noarr /opt_stat \
+( sleep 1; ros2 topic echo --csv /opt_stat \
 > $LOG_PATH/opt_stat.csv ) \
 & \
 

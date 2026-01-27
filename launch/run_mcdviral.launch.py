@@ -3,6 +3,7 @@ from launch import LaunchDescription
 from launch.event_handlers import OnProcessExit
 from launch.actions import ExecuteProcess, IncludeLaunchDescription, TimerAction
 from launch.actions import RegisterEventHandler, LogInfo, EmitEvent, DeclareLaunchArgument, Shutdown
+from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PythonExpression
 
 from launch_ros.actions import Node
@@ -14,11 +15,11 @@ datapath = '/home/tmn/DATASETS/MCDVIRAL/'
 bag_file = datapath + '/ntu_day_01/'
 
 # Session level experiment
-exp_log_dir   = "/home/tmn/slict_logs/mcdviral"             # Directory to log data
-autoexit      = 1                                           # Set to 1 so that slict_estimator exits when does not receive data for a while
-loop_en       = 1                                           # Set the 1 to enable loop closure in slict
+log_dir  = "/home/tmn/slict_logs/mcdviral"             # Directory to log data
+autoexit = 1                                           # Set to 1 so that slict_estimator exits when does not receive data for a while
+loop_en  = 1                                           # Set the 1 to enable loop closure in slict
 # Relocalization problem
-use_prior_map = 0                                           # Set to 1 to load and localize on the prior map directly
+use_prior_map = 0                                      # Set to 1 to load and localize on the prior map directly
 # Select the prior map based on the bag file
 prior_map_dir = ""
 prior_map_dir = "/home/tmn/DATASETS/MCDVIRAL/PriorMap/NTU"  if 'ntu_'  in bag_file else prior_map_dir
@@ -74,9 +75,37 @@ for key, value in tf_Lprior_L0.items():
         tf_Lprior_L0_init = value
         break
 
+def make_rosbag_play_action(context, *args, **kwargs):
+    bag_dir = LaunchConfiguration('bag_file').perform(context)
+
+    # Play all *_jazzy bag directories under bag_dir (sequentially; stable)
+    bash_cmd = f"""
+        set -e
+        shopt -s nullglob
+        for b in "{bag_dir}"/*_jazzy; do
+            echo "Playing $b"
+            ros2 bag play "$b" --read-ahead-queue-size 5000 &
+        done
+    """
+
+    return [ExecuteProcess(
+        cmd=['bash', '-lc', bash_cmd],
+        output='screen'
+    )]
+
 # Create nodes to launch
 launch_nodes = {}
+required_nodes = []
 def generate_launch_description():
+
+    launcharg_autoexit  = DeclareLaunchArgument('autoexit', default_value=str(autoexit), description='')   # Bag file
+    launcharg_bag_file  = DeclareLaunchArgument('bag_file', default_value=bag_file,      description='')   # Bag file
+    launcharg_log_dir   = DeclareLaunchArgument('log_dir',  default_value=log_dir,       description='')   # Direction to log the exp output
+    launcharg_loop_en   = DeclareLaunchArgument('loop_en',  default_value=str(loop_en),  description='')   # Direction to log the exp output
+    # launchcfg_bag_file  = LaunchConfiguration('bag_file')
+    launchcfg_autoexit  = LaunchConfiguration('autoexit')
+    launchcfg_log_dir   = LaunchConfiguration('log_dir')
+    launchcfg_loop_en   = LaunchConfiguration('loop_en')
 
     # Load the config file
     config = os.path.join(
@@ -111,14 +140,15 @@ def generate_launch_description():
         output      = 'screen',                         # Print the node output to the screen
         parameters  = [
             config,
-            {"autoexit"          :  autoexit},
+            {"autoexit"          :  launchcfg_autoexit},
             {"use_prior_map"     :  use_prior_map},
             {"prior_map_dir"     :  prior_map_dir},
             {"tf_Lprior_L0_init" :  tf_Lprior_L0_init},
-            {"loop_en"           :  loop_en},
-            {"log_dir"           :  exp_log_dir}
+            {"loop_en"           :  launchcfg_loop_en},
+            {"log_dir"           :  launchcfg_log_dir}
         ]
     )
+    required_nodes.append(RegisterEventHandler(OnProcessExit(target_action=launch_nodes['estimator_node'], on_exit=[Shutdown(reason='Estimator exited; shutting down launch.')])))
 
     # Run the IMU propagation node
     launch_nodes['imu_odom_node'] = Node(
@@ -129,21 +159,6 @@ def generate_launch_description():
         parameters  = [config]
     )
 
-    # Play all the bag files under the path
-    launch_nodes['rosbag_play_node'] = ExecuteProcess(
-        cmd=['bash', '-c',
-            f'''
-                # trap "kill 0" INT TERM EXIT
-                for b in "{bag_file}"/*_jazzy; do
-                echo "Playing $b"
-                ros2 bag play "$b" --read-ahead-queue-size 5000 &
-                done
-                wait
-            '''
-        ],
-        output='screen'
-    )
-
     # Visualize
     launch_nodes["rviz2"] = Node(
         package     = "rviz2",
@@ -151,12 +166,15 @@ def generate_launch_description():
         name        = "rviz2",
         output      = "screen",
         # emulate_tty = True,
-        arguments   = ["-d", 'launch/mcdviral.rviz'],          # omit this line if you don't have a config
-        parameters  = [],                               # optional: passes use_sim_time etc. (from your global yaml)
-        # additional_env={
-        #     # wipe anything that might inject snap libs
-        #     "LD_LIBRARY_PATH": "",
-        # },
+        arguments   = ["-d", os.path.join(get_package_share_directory("slict"), "launch", "mcdviral.rviz")],
+        parameters  = []
     )
 
-    return LaunchDescription(list(launch_nodes.values()))
+    # Play all the bag files under the path
+    launch_nodes['rosbag_play_node'] = OpaqueFunction(function=make_rosbag_play_action)
+
+    return LaunchDescription(
+        [launcharg_autoexit, launcharg_bag_file, launcharg_log_dir, launcharg_loop_en] \
+            + list(launch_nodes.values()) \
+            + required_nodes
+    )
