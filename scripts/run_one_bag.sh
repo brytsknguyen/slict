@@ -53,9 +53,9 @@ then
 # Create the log director
 mkdir -p $LOG_PATH/ ;
 # Copy the config folders for later references
-cp -R $ROS_PKG_DIR/config  $LOG_PATH;
-cp -R $ROS_PKG_DIR/launch  $LOG_PATH;
-cp -R $ROS_PKG_DIR/scripts $LOG_PATH;
+cp -R $ROS_PKG_DIR/share/$ROS_PKG/config  $LOG_PATH;
+cp -R $ROS_PKG_DIR/share/$ROS_PKG/launch  $LOG_PATH;
+cp -R $ROS_PKG_DIR/share/$ROS_PKG/scripts $LOG_PATH;
 # Create folder for BA output
 mkdir -p $LOG_PATH/ba;
 
@@ -105,25 +105,31 @@ log_dir:=$LOG_PATH/ba \
 
 MAIN_PID=$!
 
+LOGGER_PIDS=()
+
+start_logger () {
+  # Run the whole logger in a new process group
+  setsid bash -c "sleep 1; ros2 topic echo --csv $1 > \"$2\"" >/dev/null 2>&1 &
+  LOGGER_PGIDS+=("$!")   # $! is the PGID leader PID
+}
+
 # Log the topics
-( sleep 1; ros2 topic echo --csv /pred_odom \
-> $LOG_PATH/predict_odom.csv ) \
-& \
-( sleep 1; ros2 topic echo --csv /opt_odom \
-> $LOG_PATH/opt_odom.csv ) \
-& \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /leica/pose/relative \
-# > $LOG_PATH/leica_pose.csv ) \
-# & \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /dji_sdk/imu \
-# > $LOG_PATH/dji_sdk_imu.csv ) \
-# & \
-# ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv $IMU_TOPIC \
-# > $LOG_PATH/vn100_imu.csv ) \
-# & \
-( sleep 1; ros2 topic echo --csv /opt_stat \
-> $LOG_PATH/opt_stat.csv ) \
-& \
+# ( sleep 1; ros2 topic echo --csv /pred_odom > $LOG_PATH/predict_odom.csv ) \
+# & LOGGER_PIDS+=("$!")
+# ( sleep 1; ros2 topic echo --csv /opt_odom  > $LOG_PATH/opt_odom.csv ) \
+# & LOGGER_PIDS+=("$!")
+# # ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /leica/pose/relative > $LOG_PATH/leica_pose.csv ) \
+# # & LOGGER_PIDS+=("$!")
+# # ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv /dji_sdk/imu $LOG_PATH/dji_sdk_imu.csv ) \
+# # & LOGGER_PIDS+=("$!")
+# # ( sleep 1; rostopic echo -b $ROSBAG_PATH --csv $IMU_TOPIC > $LOG_PATH/vn100_imu.csv ) \
+# # & LOGGER_PIDS+=("$!")
+# ( sleep 1; ros2 topic echo --csv /opt_stat  > $LOG_PATH/opt_stat.csv ) \
+# & LOGGER_PIDS+=("$!")
+
+start_logger /pred_odom "$LOG_PATH/predict_odom.csv"
+start_logger /opt_odom  "$LOG_PATH/opt_odom.csv"
+start_logger /opt_stat  "$LOG_PATH/opt_stat.csv"
 
 else
 
@@ -133,6 +139,15 @@ sleep 1;
 fi
 
 wait $MAIN_PID;
+
+# Stop the loggers (kill their whole process groups)
+for pgid in "${LOGGER_PGIDS[@]}"; do
+  kill -INT -- "-$pgid" 2>/dev/null || true   # polite stop (flush)
+done
+sleep 0.2
+for pgid in "${LOGGER_PGIDS[@]}"; do
+  kill -TERM -- "-$pgid" 2>/dev/null || true  # force if still alive
+done
 
 # Close the screen recorder
 kill $FFMPEG_PID;

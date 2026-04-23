@@ -50,49 +50,6 @@ find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 
-# ## Find catkin macros and libraries native to ubuntu
-# find_package(catkin REQUIRED COMPONENTS
-#   dynamic_reconfigure
-#   cv_bridge
-#   pcl_conversions
-#   pcl_ros
-#   std_msgs
-#   sensor_msgs
-#   geometry_msgs
-#   nav_msgs
-#   message_generation
-#   message_runtime
-#   image_transport
-#   ufomap_msgs
-#   ufomap_ros
-#   livox_ros_driver
-#   livox_ros_driver2
-# )
-
-## Find 3rd-party packages and libraries
-# find_package(ufomap REQUIRED)
-find_package(OpenMP REQUIRED)
-find_package(PCL    REQUIRED)
-find_package(Eigen3 REQUIRED)
-find_package(Ceres  REQUIRED)
-find_package(Sophus REQUIRED)
-
-# ## Generate messages in the 'msg' folder
-# add_message_files(
-#   DIRECTORY msg
-#   FILES
-#   FeatureCloud.msg
-#   OptStat.msg
-#   TimeLog.msg
-# )
-
-## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
-
 ## Generate added messages and services with any dependencies listed here
 # To generate messages
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -352,6 +309,12 @@ install(DIRECTORY
 install(DIRECTORY
   config/
   DESTINATION share/${PROJECT_NAME}/config
+)
+
+# Install config files
+install(DIRECTORY
+  scripts/
+  DESTINATION share/${PROJECT_NAME}/scripts
 )
 
 ament_package()

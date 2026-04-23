@@ -12,32 +12,32 @@ export LAUNCH_FILE=run_mcdviral.launch.py
 
 # Find the available sequences
 SEQUENCES=(
-            # $DATASET_LOCATION/ntu_day_01
+            $DATASET_LOCATION/ntu_day_01
             $DATASET_LOCATION/ntu_day_02
-            # $DATASET_LOCATION/ntu_day_03
-            # $DATASET_LOCATION/ntu_day_04
-            # $DATASET_LOCATION/ntu_day_05
-            # $DATASET_LOCATION/ntu_day_06
-            # $DATASET_LOCATION/ntu_day_07
-            # $DATASET_LOCATION/ntu_day_08
+            $DATASET_LOCATION/ntu_day_03
+            $DATASET_LOCATION/ntu_day_04
+            $DATASET_LOCATION/ntu_day_05
+            $DATASET_LOCATION/ntu_day_06
+            $DATASET_LOCATION/ntu_day_07
+            $DATASET_LOCATION/ntu_day_08
             $DATASET_LOCATION/ntu_day_09
-            # $DATASET_LOCATION/ntu_day_10
-            # $DATASET_LOCATION/ntu_night_01
-            # $DATASET_LOCATION/ntu_night_02
-            # $DATASET_LOCATION/ntu_night_03
-            # $DATASET_LOCATION/ntu_night_04
-            # $DATASET_LOCATION/ntu_night_05
-            # $DATASET_LOCATION/ntu_night_06
-            # $DATASET_LOCATION/ntu_night_07
-            # $DATASET_LOCATION/ntu_night_08
-            # $DATASET_LOCATION/ntu_night_09
-            # $DATASET_LOCATION/ntu_night_10
-            # $DATASET_LOCATION/ntu_night_11
-            # $DATASET_LOCATION/ntu_night_12
-            # $DATASET_LOCATION/ntu_night_13
+            $DATASET_LOCATION/ntu_day_10
+            $DATASET_LOCATION/ntu_night_01
+            $DATASET_LOCATION/ntu_night_02
+            $DATASET_LOCATION/ntu_night_03
+            $DATASET_LOCATION/ntu_night_04
+            $DATASET_LOCATION/ntu_night_05
+            $DATASET_LOCATION/ntu_night_06
+            $DATASET_LOCATION/ntu_night_07
+            $DATASET_LOCATION/ntu_night_08
+            $DATASET_LOCATION/ntu_night_09
+            $DATASET_LOCATION/ntu_night_10
+            $DATASET_LOCATION/ntu_night_11
+            $DATASET_LOCATION/ntu_night_12
+            $DATASET_LOCATION/ntu_night_13
           )
 
-EPOC_DIR=/media/$USER/mySataSSD1/DATASETS/MCDVIRAL_NTU_Experiment/
+EPOC_DIR=/media/$USER/mySataSSD1/DATASETS/MCDVIRAL_NTU_Experiment_WithLC/
 
 for n in {1..1}; do
 
@@ -56,7 +56,7 @@ for n in {1..1}; do
                        _CAPTURE_SCREEN=$CAPTURE_SCREEN \
                        _LOG_DATA=$LOG_DATA \
                        _LOG_PATH="$EPOC_DIR_N/result_$seq_basename" \
-                       _LOOP_EN=0 \
+                       _LOOP_EN=1 \
                       #  _IMU_TOPIC=/vn200/imu \
 
       printf "\n"
